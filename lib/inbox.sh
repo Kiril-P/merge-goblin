@@ -51,9 +51,9 @@ inbox_classify() {
     # this" outranks every internal reason we might have had for skipping it.
     state=reviewed_by_other
     reason="reviewed by $human_reviewers"
-  elif attempts_blocked "$pr" "$head"; then
+  elif attempt_blocked "$(attempt_key "$pr" "$head")"; then
     state=blocked
-    reason="$(attempts_reason "$pr" "$head")"
+    reason="$(attempt_reason "$(attempt_key "$pr" "$head")")"
   elif [ "$mine" != true ]; then
     state=assigned_elsewhere
   else
@@ -132,7 +132,7 @@ cmd_inbox() {
     esac
   done
 
-  cfg_ensure; cfg_migrate; cfg_backfill_defaults; goblin_ensure_dirs
+  cfg_ensure; cfg_backfill_defaults; goblin_ensure_dirs
 
   if [ "$refresh" = true ]; then
     # Rate limit: the panel polls, and gh_prs is a real API call per repo.
