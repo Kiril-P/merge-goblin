@@ -354,7 +354,7 @@ APPLESCRIPT
 # Open straight onto the wizard. Used by `goblin setup` and printed by install.sh
 # when setup is still incomplete.
 cmd_app_open_wizard() {
-  cfg_ensure; cfg_migrate; cfg_backfill_defaults
+  cfg_ensure; cfg_backfill_defaults
   if [ ! -x "$(app_exec_path)" ]; then
     # No GUI available: say exactly what to do rather than dead-ending.
     echo "the app is not built (run: $GOBLIN_SLUG app rebuild)."
