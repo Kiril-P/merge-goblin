@@ -755,6 +755,35 @@ PY
   teardown
 }
 
+test_stale_failures_do_not_mark_the_icon_broken() {
+  setup
+  . "$ROOT/lib/inbox.sh"; . "$ROOT/lib/attempts.sh"
+  local now old; now="$(now_epoch)"; old=$((now - 300000))   # ~3.5 days ago
+
+  # Three failures from days ago, two of which the same PR later recovered from.
+  # This is what every long-lived install looks like, and an unbounded "last 3
+  # failures ever" turned it into a permanently red menu bar icon.
+  jq -nc --argjson at "$old" '{at:$at,number:11,title:"a",url:"u",costUsd:0,status:"failed",reason:"transient",repo:"o/r"}' >> "$EVENTS"
+  jq -nc --argjson at "$old" '{at:$at,number:12,title:"b",url:"u",costUsd:0,status:"failed",reason:"auth",repo:"o/r"}'      >> "$EVENTS"
+  jq -nc --argjson at "$((old + 10))" '{at:$at,number:12,title:"b",url:"u",costUsd:0,status:"posted",reason:"",repo:"o/r"}' >> "$EVENTS"
+  eq "0" "$(compute_stats | jq -r '.recentFailures | length')" || return 1
+
+  # A failure inside the window that has NOT recovered is a real fault and must
+  # still be reported — the bound must not silence everything.
+  jq -nc --argjson at "$now" '{at:$at,number:21,title:"c",url:"u",costUsd:0,status:"failed",reason:"other",repo:"o/r"}' >> "$EVENTS"
+  eq "1" "$(compute_stats | jq -r '.recentFailures | length')" || return 1
+
+  # ...but not once the next poll succeeds on that same PR.
+  jq -nc --argjson at "$((now + 1))" '{at:$at,number:21,title:"c",url:"u",costUsd:0,status:"posted",reason:"",repo:"o/r"}' >> "$EVENTS"
+  eq "0" "$(compute_stats | jq -r '.recentFailures | length')" || return 1
+
+  # Same PR number in a DIFFERENT repo must not launder a failure away.
+  jq -nc --argjson at "$now" '{at:$at,number:31,title:"d",url:"u",costUsd:0,status:"failed",reason:"other",repo:"o/r"}'     >> "$EVENTS"
+  jq -nc --argjson at "$((now + 1))" '{at:$at,number:31,title:"d",url:"u",costUsd:0,status:"posted",reason:"",repo:"other/repo"}' >> "$EVENTS"
+  eq "1" "$(compute_stats | jq -r '.recentFailures | length')" || return 1
+  teardown
+}
+
 # ------------------------------------------------- menu bar app / panel ---
 _entry() { # _entry <pr> <head> <draft> <author> [requested-logins...]
   local pr="$1" head="$2" draft="$3" author="$4"; shift 4
@@ -1162,6 +1191,7 @@ t "inbox: counts and shape"              test_inbox_counts_and_shape
 t "inbox: hides everything not waiting"  test_inbox_hides_everything_not_waiting
 t "inbox: human reviewer detection"      test_human_reviewer_detection
 t "inbox: own review counts as human"    test_our_own_manual_review_counts_as_human
+t "bar: stale failures are not faults" test_stale_failures_do_not_mark_the_icon_broken
 t "bar: glyph decision table"            test_bar_glyph_decision_table
 t "panel: contract matches the app"      test_panel_contract_matches_the_app
 t "panel: no generic config setter"      test_panel_has_no_generic_config_setter

@@ -9,10 +9,13 @@ STATS_EMPTY='{"reviews":{"today":0,"week":0,"total":0},"spendUsd":{"today":0,"we
 # under `set -o pipefail` fails the pipeline and would fire the fallback ON TOP
 # of valid output, emitting two JSON objects (a real bug we already hit once).
 compute_stats() {
-  local mid wk data out
+  local mid wk day data out
   mid="$(midnight_epoch)"; wk="$(week_ago_epoch)"
+  # A rolling 24 hours, not midnight: a failure at 23:50 must not stop counting
+  # as recent ten minutes later.
+  day="$(( $(now_epoch) - 86400 ))"
   data="$(cat "$EVENTS" 2>/dev/null || true)"
-  out="$(printf '%s' "$data" | jq -s --argjson mid "$mid" --argjson wk "$wk" '
+  out="$(printf '%s' "$data" | jq -s --argjson mid "$mid" --argjson wk "$wk" --argjson day "$day" '
     {
       reviews: {
         today: ([.[] | select(.status=="posted" and .at>=$mid)] | length),
@@ -28,9 +31,26 @@ compute_stats() {
         ([.[] | select(.status=="posted")] | last // {number:0,title:"",url:"",at:0})
         | {number:(.number//0), title:(.title//""), url:(.url//""), at:(.at//0)}
       ),
+      # Two bounds, because this list drives the red glyph in the menu bar and an
+      # unbounded "last 3 failures ever" means one bad afternoon marks the icon
+      # broken permanently — which trains people to ignore it, at which point it
+      # protects nobody. (No apostrophes in here: the whole jq program is a
+      # single-quoted shell string, and one would end it.)
+      #   * older than a day is history, not a fault
+      #   * a failure the same PR later recovered from is not a fault either; a
+      #     transient blip that the next poll fixed must not keep accusing.
       recentFailures: (
-        [.[] | select(.status=="failed")] | reverse | .[0:3]
-        | map({number:(.number//0), reason:(.reason//""), at:(.at//0)})
+        ([.[] | select(.status=="posted")]) as $ok
+        | [ .[]
+            | select(.status=="failed")
+            | select((.at // 0) >= $day)
+            | . as $f
+            | select(([ $ok[]
+                        | select(((.number // 0) == ($f.number // 0))
+                                 and ((.repo // "") == ($f.repo // ""))
+                                 and ((.at // 0) > ($f.at // 0))) ] | length) == 0)
+            | {number:(.number//0), reason:(.reason//""), at:(.at//0)} ]
+        | reverse | .[0:3]
       )
     }' 2>/dev/null)"
   if [ -n "$out" ]; then printf '%s' "$out"; else printf '%s' "$STATS_EMPTY"; fi
