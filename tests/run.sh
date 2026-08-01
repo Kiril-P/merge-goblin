@@ -575,11 +575,19 @@ test_security_tests_are_still_registered() {
   # A security test that is defined but never added to the runner list below is
   # dead weight that looks like coverage. Both halves must exist.
   local t
+  # The panel entries belong here for the same reason as the scrub ones: the panel
+  # is a settings channel that could once point a provider binary at any executable
+  # and then trigger a run, and its guards are structural greps that a refactor can
+  # delete without anything else noticing.
   for t in test_no_token_reaches_the_model \
            test_callers_environment_is_restored \
            test_scrub_survives_the_repair_retry \
            test_adapter_is_only_invoked_through_the_scrub \
-           test_notify_survives_hostile_pr_title; do
+           test_notify_survives_hostile_pr_title \
+           test_panel_has_no_generic_config_setter \
+           test_panel_settings_are_validated \
+           test_panel_csp_forbids_inline \
+           test_panel_has_no_html_injection_sinks; do
     grep -q "^${t}() {" "$ROOT/tests/run.sh" \
       || { echo "security test removed: $t"; return 1; }
     grep -qE "^t .*[\"' ]${t}\$" "$ROOT/tests/run.sh" \
