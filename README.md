@@ -1,5 +1,9 @@
 # 👺 The Merge Goblin
 
+![An actual Merge Goblin inline review, with author anonymized](docs/media/merge-goblin-inline-review.png)
+
+*Captured from an existing review; this is not a newly posted demo comment.*
+
 **He guards the merge button — reviewing the pull requests that ask for your review, on the AI subscription you already pay for.**
 
 He watches for PRs where you're a requested reviewer, reads the repo's *own* review
