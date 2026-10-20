@@ -1298,6 +1298,21 @@ test_a_held_review_waits_as_a_ready_job() {
 }
 
 # ---------------------------------------------------------------- update ---
+test_version_has_one_source_of_truth() {
+  # brand.sh is the only place a version is written; build.sh, the plist and the
+  # release workflow derive from it. A second copy drifts, and a drifted Info.plist
+  # makes the in-app updater compare against the wrong number.
+  local hits
+  hits="$(grep -rlE '^[[:space:]]*GOBLIN_VERSION=' "$ROOT/lib" "$ROOT/bin" "$ROOT/build.sh" "$ROOT/scripts" 2>/dev/null \
+            | grep -v '/lib/brand.sh$' || true)"
+  [ -z "$hits" ] || { echo "GOBLIN_VERSION assigned outside brand.sh: $hits"; return 1; }
+  grep -q '<string>__VERSION__</string>' "$ROOT/templates/app-info.plist.tmpl" || { echo "plist hardcodes a version"; return 1; }
+  grep -q '__VERSION__|\$GOBLIN_VERSION' "$ROOT/build.sh" || { echo "build.sh does not stamp the version"; return 1; }
+  # and every released version says what changed
+  ( . "$ROOT/lib/brand.sh"; grep -q "^## $GOBLIN_VERSION\$" "$ROOT/CHANGELOG.md" ) \
+    || { echo "CHANGELOG.md has no section for this version"; return 1; }
+}
+
 test_update_version_compare() {
   setup
   . "$ROOT/lib/update.sh"
@@ -1754,6 +1769,7 @@ t "agent: label is per-user"             test_agent_label_is_per_user
 t "migrate: preserves ledger + events"   test_migrate_preserves_ledger_and_events
 t "ui: state cache is valid json"        test_ui_state_is_valid_json
 t "ui: state carries update flag"        test_ui_state_carries_the_update_flag
+t "version: one source of truth"         test_version_has_one_source_of_truth
 t "update: version compare"              test_update_version_compare
 t "update: flag clears after upgrade"    test_update_flag_does_not_outlive_the_upgrade
 t "update: throttled, silent offline"    test_update_check_is_throttled_and_silent_when_offline
