@@ -175,6 +175,27 @@ He keeps your rules on *what to flag and how to write*, and ignores anything abo
 submit* — the Goblin owns posting, so severity and verdict are enforced in code rather than trusted
 to the model.
 
+**The rules are read from the base branch, never from the PR.** A pull request that edits
+`AGENTS.md` or the review skill can't change how it is graded: the Goblin copies those files out
+of `origin/<base>` as git blobs (symlinks ignored) and builds the prompt from that copy.
+
+## How he checks his work
+
+- **He reads the code, not just the diff.** The model gets a read-only checkout of the PR
+  (Read, Grep and Glob, confined to that directory — no shell, no network, no writes) so it can
+  confirm a claim against the callers and tests before making it. It runs from an empty
+  directory with only your own settings, so a PR can't smuggle in hooks or MCP servers.
+- **Blockers are graded by consequence.** A blocker is something that would cause harm that
+  doesn't fix itself, with a trigger he can name. A missing test, missing docs, style or an
+  unmeasured performance worry is never one.
+- **He reads what people already said.** Comments and reviews from others on the PR go into the
+  prompt, so he doesn't repeat them.
+- **A second look before posting.** For reviews that post without a person reading them first
+  (the scheduler, `--post`), a skeptical second pass tries to disprove each finding against the
+  source — using a different provider when one is ready. It can drop a finding or lower its
+  severity, never raise it, and if it fails the findings stand as they were. Previews skip it
+  because you are the second look. Costs roughly double; turn it off with `refutePass`.
+
 ## Running it as a team
 
 Everyone installs the Goblin and lists the same teammates:
@@ -215,6 +236,8 @@ he also caps **reviews per run**. Everything is visible in the panel and `goblin
 | `budgetCapUsd` | `10` | 0 = unlimited |
 | `maxReviewsPerRun` | `5` | |
 | `maxFindings` | `25` | |
+| `refutePass` | `true` | second, skeptical pass before an unattended review posts |
+| `gitTimeoutSecs` | `120` | cap on every clone / fetch the engine runs |
 | `fleet` | `[]` | teammates also running the Goblin |
 | `intervalSeconds` | `300` | re-run `install.sh` after changing |
 

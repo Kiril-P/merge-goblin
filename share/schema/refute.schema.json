@@ -1,0 +1,21 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "goblin refute pass",
+  "type": "object",
+  "required": ["verdicts"],
+  "properties": {
+    "verdicts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "verdict", "reason"],
+        "properties": {
+          "id": { "type": "string" },
+          "verdict": { "type": "string", "enum": ["keep", "drop", "downgrade"] },
+          "severity": { "type": "string", "enum": ["convention", "risk", "nit"] },
+          "reason": { "type": "string" }
+        }
+      }
+    }
+  }
+}

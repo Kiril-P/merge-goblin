@@ -15,11 +15,18 @@ Review the diff for real problems, in this order of importance:
 
 Rules for good findings:
 
-- Only report things you can point at in the diff. No speculation, no "consider maybe".
+- Report every real problem you can substantiate. Do not hold back a verified defect to
+  keep the list short — a reviewer who stays quiet about real bugs is worse than one who
+  is occasionally wrong. Zero findings is still a valid result when the change is clean.
+- Substantiate before you claim. When a checkout is available, open the callers, the
+  definitions, the tests and the config around the change and confirm the problem is
+  real and reachable. A finding you checked against the source outranks one you guessed
+  from the diff. If you cannot confirm it, either drop it or report it as a `risk` and say
+  exactly what you could not verify.
+- Point at the line. Every finding names the exact line that makes it true.
 - Every finding must be **actionable**: say what is wrong and what to do instead.
-- Skip cosmetic nitpicks unless they violate a required standard above.
-- Do not restate what the code does, do not praise, do not summarise the diff back.
-- If a finding applies to many lines, report it once at the most relevant line.
-- Prefer few high-quality findings over many weak ones. Zero findings is a valid result.
-- Verify before you claim: if you assert something is broken, be able to point to the
-  exact line that makes it so.
+- Do not pad. No speculation ("consider maybe"), no restating what the code does, no
+  praise, no summary of the diff, no cosmetic nitpick unless it breaks a required
+  standard above.
+- If a problem appears in many places, report it once at the most relevant line.
+- Do not repeat anything listed as already posted or already raised by other people.

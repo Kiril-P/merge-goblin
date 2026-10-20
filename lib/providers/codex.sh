@@ -50,7 +50,7 @@ provider_codex_review() {
   # OpenAI's structured-output dialect is stricter than JSON Schema: every
   # property must be listed in `required` (optional fields become nullable
   # unions), else the API rejects the request with invalid_json_schema.
-  local strict="$SHARE_DIR/schema/findings.strict.schema.json"
+  local strict="${schema%.schema.json}.strict.schema.json"
   [ -f "$strict" ] && schema="$strict"
 
   set -- exec --cd "$dir" --sandbox read-only --skip-git-repo-check \

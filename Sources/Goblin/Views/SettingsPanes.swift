@@ -508,6 +508,9 @@ struct BehaviourPane: View {
                 FlagRow(store: store, title: "Leave PRs a person already reviewed",
                         hint: "Once a colleague has left a real review, an automated one is just noise.",
                         value: s.skipIfHumanReviewed, command: { .setFlag(key: .skipIfHumanReviewed, on: $0) })
+                FlagRow(store: store, title: "Double-check before posting",
+                        hint: "A second look tries to disprove each finding before an unattended review posts. Costs about twice as much; previews skip it.",
+                        value: s.refutePass, command: { .setFlag(key: .refutePass, on: $0) })
                 FlagRow(store: store, title: "Show a status on the commit",
                         hint: "A small “Merge Goblin / review” check next to the PR's other checks.",
                         value: s.postCommitStatus, last: true, command: { .setFlag(key: .postCommitStatus, on: $0) })

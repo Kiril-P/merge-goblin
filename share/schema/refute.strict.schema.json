@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "goblin refute pass (strict)",
+  "description": "Same contract as refute.schema.json in OpenAI structured-output dialect (every property required, optionals nullable). Used by codex.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["verdicts"],
+  "properties": {
+    "verdicts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "verdict", "severity", "reason"],
+        "properties": {
+          "id": { "type": "string" },
+          "verdict": { "type": "string", "enum": ["keep", "drop", "downgrade"] },
+          "severity": { "type": ["string", "null"], "enum": ["convention", "risk", "nit", null] },
+          "reason": { "type": "string" }
+        }
+      }
+    }
+  }
+}

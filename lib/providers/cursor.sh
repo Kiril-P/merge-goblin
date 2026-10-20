@@ -47,10 +47,11 @@ provider_cursor_review() {
   t0="$(now_epoch)"
 
   # cursor-agent refuses to run in an untrusted directory and asks interactively,
-  # which never completes under launchd. --force trusts the directory; safe here
-  # because the review needs read access only — it has no tools to post with and
-  # the repo is a throwaway scratch clone.
-  set -- -p --output-format json --force
+  # which never completes under launchd, so the scratch clone is trusted with --trust.
+  # --mode ask is its read-only mode: it can read the checkout but not edit it or run
+  # commands. This used to be --force ("allow commands"), which handed a model reading
+  # an attacker's pull request a shell.
+  set -- -p --output-format json --mode ask --trust
   [ -n "$model" ] && set -- "$@" --model "$model"
 
   ( cd "$dir" 2>/dev/null || exit 1

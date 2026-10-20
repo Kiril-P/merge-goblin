@@ -184,7 +184,7 @@ ui_state_write() {
     --argjson settings "$(cfg_get_json '{
         verdictMode, allowApprove, budgetCapUsd, maxReviewsPerDay, maxReviewsPerRun,
         maxFindings, intervalSeconds, timeoutSecs, maxDiffBytes, incrementalReview,
-        postCommitStatus, postIntentComment, fleetAssignment, skipIfHumanReviewed,
+        postCommitStatus, postIntentComment, fleetAssignment, skipIfHumanReviewed, refutePass,
         manualReviewMode, maxConcurrentJobs, lastRepo,
         notify,
         providers: (.providers | with_entries(.value |= {model}))

@@ -83,6 +83,7 @@ enum FlagKey: String, CaseIterable {
     case notifyBudget
     case notifySound
     case skipIfHumanReviewed
+    case refutePass
 
     /// The name bash sees. Kebab-case because that is the CLI's convention.
     var cliName: String {
@@ -96,6 +97,7 @@ enum FlagKey: String, CaseIterable {
         case .notifyBudget:      return "notify-budget"
         case .notifySound:       return "notify-sound"
         case .skipIfHumanReviewed: return "skip-if-human-reviewed"
+        case .refutePass:        return "refute-pass"
         }
     }
 }

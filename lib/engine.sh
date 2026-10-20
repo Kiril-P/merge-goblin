@@ -7,6 +7,7 @@
 # shellcheck source=providers.sh
 . "$LIB_DIR/providers.sh"
 . "$LIB_DIR/findings.sh"
+. "$LIB_DIR/refute.sh"
 . "$LIB_DIR/github.sh"
 . "$LIB_DIR/render.sh"
 . "$LIB_DIR/post.sh"
@@ -378,7 +379,11 @@ engine_review_pr_locked() {
   # 2. a checkout, so the model can read surrounding code
   job_phase reading
   local repo_dir; repo_dir="$(goblin_repo_dir "$slug")"
-  engine_checkout "$slug" "$pr" "$repo_dir" || log "  #$pr: no local checkout (reviewing from diff only)"
+  # `checkout` stays empty unless THIS pull request is really checked out: a stale
+  # clone left over from another PR must never be read or reviewed as if it were this one.
+  local checkout=""
+  if engine_checkout "$slug" "$pr" "$repo_dir"; then checkout="$repo_dir"
+  else log "  #$pr: no local checkout (reviewing from diff only)"; fi
 
   # 3. context: PR meta, ticket, findings already posted
   gh_pr_meta "$slug" "$pr" "$work/pr.json" || printf '{"number":%s,"title":"%s","body":"","base":"%s","author":""}' "$pr" "$title" "$base" > "$work/pr.json"
@@ -391,9 +396,16 @@ engine_review_pr_locked() {
     log "  #$pr: incremental (last reviewed $(trunc "$last_sha" 7), $(jq 'length' "$prior_json") prior finding(s))"
   fi
 
-  # 4. assemble the prompt from THIS repo's own review rules
-  prompt_build "${repo_dir:-$work}" "$slug" "$work/pr.json" "$work/diff.txt" \
-               "$work/ticket.txt" "$work/prior.txt" "$work/prompt.txt"
+  : > "$work/others.txt"
+  gh_other_comments "$slug" "$pr" > "$work/others.txt" 2>/dev/null || : > "$work/others.txt"
+
+  # 4. assemble the prompt from THIS repo's own review rules — as they are on the base
+  # branch, not as the pull request left them (see prompt_rules_view).
+  local rules_dir="$work/rules"
+  prompt_rules_view "$repo_dir" "$base" "$slug" "$rules_dir" \
+    || log "  #$pr: no base branch to read the review rules from (using the general reviewer)"
+  prompt_build "$rules_dir" "$slug" "$work/pr.json" "$work/diff.txt" \
+               "$work/ticket.txt" "$work/prior.txt" "$work/prompt.txt" "$checkout" "$work/others.txt"
 
   if [ "$DRY_RUN" = true ]; then
     engine_dry_run "$work" "$slug" "$pr" "$head" "$base" "$provider"
@@ -402,7 +414,7 @@ engine_review_pr_locked() {
 
   # 5. run the model
   job_phase reviewing
-  if ! findings_run "$provider" "$work/prompt.txt" "${repo_dir:-$work}" "$work/norm.json" "$work/raw"; then
+  if ! findings_run "$provider" "$work/prompt.txt" "${checkout:-$work}" "$work/norm.json" "$work/raw"; then
     local kind="${GOBLIN_P_ERRKIND:-other}"
     log "  #$pr: review failed ($kind) ${GOBLIN_P_ERRMSG:-}"
     # A cancel kills the model mid-run, which surfaces here as an ordinary failure.
@@ -420,6 +432,11 @@ engine_review_pr_locked() {
     status_set '{"state":"idle","activity":""}'
     job_phase failed "$(jq -nc --arg k "$kind" --arg m "${GOBLIN_P_ERRMSG:-}" '{error:$k, errorDetail:$m}')"
     rm -rf "$work"; return 1
+  fi
+
+  # 5b. a second, skeptical look — only where nobody reads the review before it posts
+  if [ "$PREVIEW" != true ] && [ "$(cfg_get '.refutePass' true)" = "true" ]; then
+    refute_run "$provider" "$work" "$checkout" "$pr" || true
   fi
 
   # 6. drop findings that were already posted and still stand
@@ -569,7 +586,8 @@ engine_dry_run() {
   echo "prompt:            $(wc -c < "$work/prompt.txt" | tr -d ' ') bytes  ($work/prompt.txt)"
   echo "diff:              $(wc -c < "$work/diff.txt" | tr -d ' ') bytes, $(jq 'length' "$work/files.json") files"
   echo "addressable lines: $(jq 'length' "$work/addr.json")"
-  echo "review rules from: $(prompt_discover "$(goblin_repo_dir "$slug")" "$slug" 2>/dev/null | sed "s|$(goblin_repo_dir "$slug")/||" || echo '(built-in fallback)')"
+  local rf; rf="$(prompt_discover "$work/rules" "$slug" 2>/dev/null || true)"
+  echo "review rules from: ${rf:+${rf#"$work"/rules/} (origin/$base)}${rf:-(built-in fallback)}"
   echo "ticket context:    $([ -s "$work/ticket.txt" ] && echo "$(wc -c < "$work/ticket.txt" | tr -d ' ') bytes" || echo none)"
   echo "verdict would be:  $(cfg_get '.verdictMode' comment) → (computed after findings)"
   echo
@@ -585,24 +603,41 @@ engine_dry_run() {
 # Standalone clone (never a worktree under ~/Documents — macOS TCC blocks
 # launchd from reading there), reset hard before every checkout because leftover
 # dirty files made `gh pr checkout` abort on every PR once.
+# engine_git <git args...> — git that can neither prompt nor hang. A credential prompt
+# under launchd has nobody to answer it, and a stalled fetch would otherwise hold the
+# repo lock (and the whole run) until the stale-lock sweep.
+engine_git() {
+  GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=true \
+    run_with_timeout "$(cfg_get '.gitTimeoutSecs' 120)" git "$@"
+}
+
+# Symlinks in a pull request's checkout can point anywhere on this machine, and the
+# model is about to be handed read access to that directory. Delete them all; the
+# files they point at are still readable by their real names.
+engine_scrub_symlinks() {
+  find "$1" -path "$1/.git" -prune -o -type l -exec rm -f {} + 2>/dev/null || true
+}
+
 engine_checkout() {
   local slug="$1" pr="$2" dir="$3"
   if ! git -C "$dir" rev-parse --git-dir >/dev/null 2>&1; then
     log "  cloning $slug (one-time)"
     rm -rf "$dir"
-    git clone --quiet "https://github.com/$slug.git" "$dir" >/dev/null 2>&1 || return 1
+    engine_git clone --quiet "https://github.com/$slug.git" "$dir" >/dev/null 2>&1 || return 1
   fi
-  git -C "$dir" fetch --quiet origin >/dev/null 2>&1 || return 1
+  engine_git -C "$dir" fetch --quiet origin >/dev/null 2>&1 || return 1
   git -C "$dir" reset --hard --quiet >/dev/null 2>&1
   git -C "$dir" clean -ffd >/dev/null 2>&1
   # GitHub keeps refs/pull/N/head for every PR, open, merged or from a fork. `gh pr
   # checkout` goes by branch name instead, which fails once the branch is deleted —
   # exactly the PR someone asks to have reviewed after the fact — so it is only the
   # fallback.
-  if git -C "$dir" fetch --quiet origin "pull/$pr/head" >/dev/null 2>&1 \
+  if engine_git -C "$dir" fetch --quiet origin "pull/$pr/head" >/dev/null 2>&1 \
      && git -C "$dir" checkout --quiet --detach FETCH_HEAD >/dev/null 2>&1; then
+    engine_scrub_symlinks "$dir"
     return 0
   fi
-  ( cd "$dir" && gh pr checkout "$pr" --repo "$slug" --detach >/dev/null 2>&1 ) || return 1
+  ( cd "$dir" && run_with_timeout "$(cfg_get '.gitTimeoutSecs' 120)" gh pr checkout "$pr" --repo "$slug" --detach >/dev/null 2>&1 ) || return 1
+  engine_scrub_symlinks "$dir"
   return 0
 }

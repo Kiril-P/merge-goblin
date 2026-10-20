@@ -425,6 +425,7 @@ struct Snapshot: Equatable {
         var postIntentComment = true
         var fleetAssignment = true
         var skipIfHumanReviewed = true
+        var refutePass = true
         var manualReviewMode = "preview"
         var maxConcurrentJobs = 2
         var lastRepo = ""
@@ -499,6 +500,7 @@ struct Snapshot: Equatable {
         st.postIntentComment = s["postIntentComment"].bool(true)
         st.fleetAssignment = s["fleetAssignment"].bool(true)
         st.skipIfHumanReviewed = s["skipIfHumanReviewed"].bool(true)
+        st.refutePass = s["refutePass"].bool(true)
         st.manualReviewMode = s["manualReviewMode"].string("preview")
         st.maxConcurrentJobs = s["maxConcurrentJobs"].int(2)
         st.lastRepo = s["lastRepo"].string("")

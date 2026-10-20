@@ -39,15 +39,21 @@ in the diff below:
 - A finding whose line is not in the diff is still valuable: include it with the correct
   `path` and omit `line`. It will be reported in the summary instead of inline.
 
-**Severity**
+**Severity — grade by consequence**
 
 | value | use for |
 |---|---|
-| `blocker` | a bug/regression, or something the repo's rules say to block on |
+| `blocker` | merging this would cause harm that does not fix itself: data loss or corruption, a security hole, a crash or outage on a normal path, wrong results shipped silently, a broken build or deploy — or something the repo's rules explicitly say to block on. You can name the exact input or condition that triggers it. |
 | `convention` | violates a required repo standard listed above |
-| `risk` | plausible problem you could not fully verify |
+| `risk` | plausible problem you could not fully verify, or a real one whose impact is limited or recoverable |
 | `nit` | minor; only if it breaks a required standard |
 | `question` | genuinely needs the author to answer |
+
+Models over-grade, so be stingy with `blocker`. These are **never** a blocker: a missing
+or thin test, missing docs or comments, naming or style, a performance concern you did not
+measure, a theoretical edge case, an error that is logged and retried, anything you are
+unsure about. A missing test is at most a `convention` (if the repo requires one) or a
+`risk`. If the consequence would heal itself or be caught immediately, it is not a blocker.
 
 **`suggestion`** must be the exact replacement text for the commented line range —
 omit it unless it applies cleanly on its own.

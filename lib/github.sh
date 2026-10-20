@@ -176,3 +176,23 @@ gh_status() {
   [ -n "$url" ] && set -- "$@" -f target_url="$url"
   gh api -X POST "repos/$slug/statuses/$sha" "$@" --silent >/dev/null 2>&1 || true
 }
+
+# gh_other_comments <slug> <pr> -> one line per comment someone ELSE left on the pull
+# request: inline review comments and review summaries, without our own markers and
+# without ours at all. Fed to the model as "already raised", so it does not repeat what
+# a human or another bot already said. Failures yield nothing: this is only context.
+gh_other_comments() {
+  local slug="$1" pr="$2" me="${GOBLIN_LOGIN:-}"
+  {
+    gh api --paginate "repos/$slug/pulls/$pr/comments?per_page=100" --jq '.[]
+      | select(.body != null and (.body | test("<!-- ('"$GOBLIN_MARKER_NS"'|'"$GOBLIN_MARKER_NS_LEGACY"'):"; "i") | not))
+      | {user: .user.login, path: .path, line: (.line // .original_line), body: .body}' 2>/dev/null
+    gh api --paginate "repos/$slug/pulls/$pr/reviews?per_page=100" --jq '.[]
+      | select((.body // "") != "" and (.body | test("<!-- ('"$GOBLIN_MARKER_NS"'|'"$GOBLIN_MARKER_NS_LEGACY"'):"; "i") | not))
+      | {user: .user.login, path: null, line: null, body: .body}' 2>/dev/null
+  } | jq -rs --arg me "$me" '
+      map(select(.user != $me))
+      | .[0:40][]
+      | "- " + (if .path then "\(.path):\(.line // "?") " else "(review) " end)
+        + "@\(.user): " + (.body | gsub("\\s+"; " ") | .[0:240])' 2>/dev/null
+}

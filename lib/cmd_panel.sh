@@ -132,6 +132,7 @@ _panel_set() {
         post-commit-status|postCommitStatus)      cfg_set ".postCommitStatus = $fval" ;;
         fleet-assignment|fleetAssignment)         cfg_set ".fleetAssignment = $fval" ;;
         skip-if-human-reviewed|skipIfHumanReviewed) cfg_set ".skipIfHumanReviewed = $fval" ;;
+        refute-pass|refutePass)                   cfg_set ".refutePass = $fval" ;;
         notify-started|notifyStarted) cfg_set ".notify.started = $fval" ;;
         notify-posted|notifyPosted)   cfg_set ".notify.posted  = $fval" ;;
         notify-failed|notifyFailed)   cfg_set ".notify.failed  = $fval" ;;
