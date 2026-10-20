@@ -10,7 +10,11 @@ The Goblin is now a native Mac app, and you can hand it any PR yourself.
   the Goblin reviews it on demand. The CLI equivalent is `goblin review <ref>`.
 - By default a review stops at a **preview**: read it, edit or drop findings, then
   post. `goblin post <job>` / `goblin cancel <job>` from the terminal.
-- A ready review can be posted straight from its card in the popover.
+- A ready review can be posted straight from its card in the popover, or from the
+  notification's **Post** button; clicking a notification opens that exact review.
+- **Auto-post policy** for reviews the Goblin does on its own (Settings > Behaviour,
+  `autoPost`): post them all, post only when safe (no blocker, not high-risk), or hold
+  every one in Ready to read for you to post.
 - A preview is refused at post time if a review of the same commit was posted after
   the preview was made, so two people (or two Goblins) do not post the same review.
   `--force` overrides; a deliberate re-review of a newer commit still posts.
@@ -25,7 +29,14 @@ The Goblin is now a native Mac app, and you can hand it any PR yourself.
   sign-in, reviewer, repos), a Settings window, and a Health pane with one-click
   fixes. The app carries its own copy of the engine, so an install is one file.
 - Pick a model from a menu of what your provider actually offers, instead of
-  typing a name.
+  typing a name — or switch account, provider and model straight from the popover
+  header. Right-click any review or PR for its actions; chips, file locations and
+  counts are clickable.
+- Review window keyboard: ↑/↓ or j/k between findings, Space to include or drop,
+  E to edit, ⌘↩ to post (never while you are typing), Esc to close.
+- Usage (Settings > About): reviews per day for two weeks and per provider/model,
+  with dollars where the provider reports them. Team: whose Goblin is active, from
+  `goblin fleet status`.
 - New app icon, menu bar glyph and goblin artwork.
 - UI overhaul: smoother motion (Reduce Motion is respected), gliding tabs with
   counts, severity dots, hover states, and a header that shows what the Goblin is
