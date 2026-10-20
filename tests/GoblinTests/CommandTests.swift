@@ -26,6 +26,21 @@ final class CommandTests: XCTestCase {
         XCTAssertTrue(a.contains("--post") && a.contains("--force"))
     }
 
+    func testInstallUpdateIsOneFixedArgvOnTheLongestWatchdog() throws {
+        guard case .cli(let argv, let timeout, let mutating, let json) = try Command.installUpdate.validatedPlan() else {
+            return XCTFail("installUpdate must run the CLI")
+        }
+        // No value travels with it: the engine alone picks the release, the asset and
+        // the destination, so nothing in the UI can redirect the download.
+        XCTAssertEqual(argv, ["update", "install", "--json", "--relaunch"])
+        XCTAssertEqual(timeout, .update)
+        XCTAssertTrue(mutating, "serialised with other writes, and followed by a state reload")
+        XCTAssertTrue(json)
+        // A download on a slow line must outlast every other watchdog, including a post.
+        let others: [TimeoutClass] = [.read, .mutation, .doctor, .discovery, .post]
+        for other in others { XCTAssertGreaterThan(timeout.seconds, other.seconds) }
+    }
+
     func testHostileValuesAreRefused() {
         let ref = PRRef.parse("1")!
         XCTAssertThrowsError(try Command.review(ref: ref, repo: "-x/y", mode: .preview, focus: .full,
@@ -53,6 +68,7 @@ final class CommandTests: XCTestCase {
             .setIdentity(login: "someone"), .doctor(fix: true), .accounts, .providers(refresh: true),
             .stats(days: 30, refresh: true), .fleetStatus(refresh: true), .fleetStatus(refresh: false),
             .repoSearch(query: "wid", limit: 20), .wizardState, .githubLoginStart, .loginItem(on: true),
+            .installUpdate,
         ]
         all += FlagKey.allCases.map { .setFlag(key: $0, on: true) }
         for c in all {

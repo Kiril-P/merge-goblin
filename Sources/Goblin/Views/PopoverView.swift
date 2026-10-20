@@ -191,12 +191,25 @@ struct PopoverView: View {
                 Button("Copy diagnostics") { store.copyDiagnostics() }
                 if store.snapshot.updateAvailable {
                     Divider()
-                    Button("Update available: v\(store.snapshot.updateLatest)") { store.openURL(store.snapshot.updateURL) }
+                    if store.canInstallUpdate {
+                        Button(store.updateInstalling ? "Installing update…" : "Install update v\(store.snapshot.updateLatest)") {
+                            Task { await store.installUpdate() }
+                        }
+                        .disabled(store.updateInstalling)
+                        Button("What's new in v\(store.snapshot.updateLatest)") { store.openURL(store.snapshot.updateURL) }
+                    } else {
+                        Button("Update available: v\(store.snapshot.updateLatest)") { store.openURL(store.snapshot.updateURL) }
+                    }
                 }
             } label: { Label("More", systemImage: "ellipsis.circle") }
                 .menuStyle(.borderlessButton).fixedSize()
             Spacer()
-            if store.snapshot.spendToday > 0 || store.snapshot.reviewsToday > 0 {
+            if store.updateInstalling {
+                HStack(spacing: 5) {
+                    ProgressView().controlSize(.mini)
+                    Text("Updating…").font(.caption).foregroundStyle(.secondary)
+                }
+            } else if store.snapshot.spendToday > 0 || store.snapshot.reviewsToday > 0 {
                 Button { withAnimation(Motion.spring) { tab = .recent } } label: {
                     Text(verbatim: store.snapshot.spendToday > 0
                          ? String(format: "$%.2f today", store.snapshot.spendToday)

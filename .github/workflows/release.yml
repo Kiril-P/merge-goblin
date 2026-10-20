@@ -1,7 +1,8 @@
 name: release
 
 # Push a tag like v0.5.0 and this builds the disk image, signs and notarises it when
-# the Apple secrets are present, and publishes it with the cask text for the tap.
+# the Apple secrets are present, and publishes it with SHA256SUMS (which the in-app
+# updater requires) and the cask text for the tap.
 #
 # Secrets (all optional; without them the release is an unsigned build):
 #   MACOS_CERT_P12, MACOS_CERT_PASSWORD   a "Developer ID Application" certificate, base64 .p12
@@ -74,7 +75,11 @@ jobs:
         run: |
           . lib/brand.sh
           DMG="build/MergeGoblin-$GOBLIN_VERSION.dmg"
+          # After notarisation: stapling rewrites the DMG, so a sum taken earlier is wrong.
           SHA="$(shasum -a 256 "$DMG" | awk '{print $1}')"
+          # `goblin update install` refuses a release without this, in this format.
+          ( cd build && shasum -a 256 "MergeGoblin-$GOBLIN_VERSION.dmg" > SHA256SUMS )
+          ( cd build && shasum -a 256 -c SHA256SUMS )
           sed -e "s/@VERSION@/$GOBLIN_VERSION/" -e "s/@SHA256@/$SHA/" packaging/merge-goblin.rb > build/merge-goblin.rb
           {
             echo "Download **MergeGoblin-$GOBLIN_VERSION.dmg**, open it and drag Merge Goblin to Applications."
@@ -83,4 +88,4 @@ jobs:
             fi
             echo; echo "sha256: \`$SHA\`"
           } > build/notes.md
-          gh release create "$GITHUB_REF_NAME" "$DMG" build/merge-goblin.rb --title "Merge Goblin $GOBLIN_VERSION" --notes-file build/notes.md
+          gh release create "$GITHUB_REF_NAME" "$DMG" build/SHA256SUMS build/merge-goblin.rb --title "Merge Goblin $GOBLIN_VERSION" --notes-file build/notes.md

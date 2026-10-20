@@ -76,6 +76,7 @@ $GOBLIN_EMOJI $GOBLIN_NAME v$GOBLIN_VERSION — $GOBLIN_TAGLINE
   goblin agent [status|start|stop|reload|label]
   goblin migrate [--from DIR]         import state from the old prauto/conductor setup
   goblin update                       check for a newer $GOBLIN_SHORT (never installs)
+  goblin update install [--json]      replace this app with the latest verified release
   goblin version | help
 EOF
 }

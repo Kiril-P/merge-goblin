@@ -754,10 +754,27 @@ struct AboutPane: View {
             }
             if store.snapshot.updateAvailable {
                 SettingsGroup {
-                    SettingRow(title: "Version \(store.snapshot.updateLatest) is available",
-                               hint: "The Goblin never updates himself. Download it, or run brew upgrade.", last: true) {
-                        Button("Get it") { store.openURL(store.snapshot.updateURL) }.buttonStyle(.goblinPrimarySmall)
-                            .disabled(store.snapshot.updateURL.isEmpty)
+                    if store.canInstallUpdate {
+                        SettingRow(title: "Version \(store.snapshot.updateLatest) is available",
+                                   hint: "Downloads the release from GitHub, checks its checksum and signature, swaps it in and restarts. Nothing changes until you click.",
+                                   last: true) {
+                            HStack(spacing: 8) {
+                                Button("What's new") { store.openURL(store.snapshot.updateURL) }.buttonStyle(.goblinSmall)
+                                    .disabled(store.snapshot.updateURL.isEmpty)
+                                if store.updateInstalling { ProgressView().controlSize(.small) }
+                                Button(store.updateInstalling ? "Installing…" : "Install update") {
+                                    Task { await store.installUpdate() }
+                                }
+                                .buttonStyle(.goblinPrimarySmall)
+                                .disabled(store.updateInstalling)
+                            }
+                        }
+                    } else {
+                        SettingRow(title: "Version \(store.snapshot.updateLatest) is available",
+                                   hint: "This copy runs from a source checkout: update it with git pull && ./install.sh.", last: true) {
+                            Button("Get it") { store.openURL(store.snapshot.updateURL) }.buttonStyle(.goblinPrimarySmall)
+                                .disabled(store.snapshot.updateURL.isEmpty)
+                        }
                     }
                 }
             }

@@ -31,6 +31,10 @@ The Goblin is now a native Mac app, and you can hand it any PR yourself.
   counts, severity dots, hover states, and a header that shows what the Goblin is
   doing.
 - Ships as a drag-to-Applications disk image; a Homebrew cask template is included.
+- **Install update** (More menu, Settings > About, or `goblin update install`): downloads
+  the latest release, refuses it unless its checksum matches, it is newer and final, and
+  (for a signed install) it is signed by the same team, then swaps it in and restarts.
+  See [Updating](README.md#updating). Releases now publish `SHA256SUMS`.
 
 ### A more careful reviewer
 

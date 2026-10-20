@@ -98,6 +98,9 @@ final class AppStore {
     private(set) var clipboard: PRRef?
     private(set) var toast: Toast?
     private(set) var loginItemOn = false
+    /// True while `goblin update install` runs. On success the app quits and the engine
+    /// opens the new copy, so this never needs to go back to false after a success.
+    private(set) var updateInstalling = false
 
     /// A person's unsaved changes to each waiting review, by job id.
     var edits: [String: ReviewEdits] = [:]
@@ -638,6 +641,45 @@ final class AppStore {
             reload()
             return false
         }
+    }
+
+    // MARK: updating the app
+
+    /// Offered only when the engine runs from inside this app's bundle: that bundle is
+    /// what the engine replaces. A source install updates with git pull instead.
+    var canInstallUpdate: Bool { snapshot.updateAvailable && CLI.shared.engineSource == .bundled }
+
+    /// Download, verify and swap in the latest release, then quit so the engine can
+    /// open the new copy. Every check (checksum, version, signing team) is the engine's;
+    /// this only reports what it said.
+    func installUpdate() async {
+        guard canInstallUpdate, !updateInstalling else { return }
+        updateInstalling = true
+        let latest = snapshot.updateLatest
+        say("Downloading v\(latest). The Goblin restarts when it is in place.")
+        var failure = "The update did not install."
+        do {
+            let out = try await CLI.shared.run(.installUpdate)
+            let j = JSON.parse(out.stdout)
+            if j["ok"].bool(false) {
+                say("Updated to v\(j["version"].string(latest)). Restarting…", .success)
+                try? await Task.sleep(nanoseconds: 1_200_000_000)
+                NSApp.terminate(nil)
+                return
+            }
+            failure = j["message"].string(failure)
+        } catch let f as CLI.Failure {
+            // A refusal arrives as JSON on stdout with a non-zero exit.
+            if case .cliError(let m, _) = f, JSON.parse(m).exists {
+                failure = JSON.parse(m)["message"].string(failure)
+            } else {
+                failure = f.errorDescription ?? failure
+            }
+        } catch {
+            failure = error.localizedDescription
+        }
+        updateInstalling = false
+        say(failure, .error)
     }
 
     func setPower(_ on: Bool) { Task { await perform(.power(on: on)) } }

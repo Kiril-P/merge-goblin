@@ -549,8 +549,13 @@ test_security_tests_are_still_registered() {
            test_notify_survives_hostile_pr_title \
            test_panel_has_no_generic_config_setter \
            test_panel_settings_are_validated \
-           test_app_never_spawns_a_shell; do
-    grep -q "^${t}() {" "$ROOT/tests/run.sh" \
+           test_app_never_spawns_a_shell \
+           test_update_install_refuses_a_checksum_mismatch \
+           test_update_install_refuses_a_prerelease \
+           test_update_install_checks_the_signing_team \
+           test_update_install_refuses_a_different_app; do
+    # `name() {` or a subshell body, `name() (`
+    grep -qE "^${t}\(\) [{(]" "$ROOT/tests/run.sh" \
       || { echo "security test removed: $t"; return 1; }
     grep -qE "^t .*[\"' ]${t}\$" "$ROOT/tests/run.sh" \
       || { echo "security test defined but not registered with the runner: $t"; return 1; }
@@ -1372,6 +1377,241 @@ test_ui_state_carries_the_update_flag() {
   teardown
 }
 
+# -------------------------------------------------------- update install ---
+# Offline, end to end except for three seams. A fake `gh` serves a fake release:
+# $UPD/release.json is /releases/latest and $UPD/assets/ is what `gh release
+# download` hands back. The "DMG" is an ordinary file (so its checksum is real);
+# the stubbed mount step lays out $UPD/image in its place. The installed app is a
+# dummy bundle in $UPD/Apps, and GOBLIN_APP points at its engine like the real app.
+# These test bodies are subshells: the stubs and GOBLIN_VERSION must not leak.
+
+_upd_plist() { # <file> <bundle-id> <version>
+  mkdir -p "$(dirname "$1")"
+  cat > "$1" <<P
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>$2</string>
+<key>CFBundleShortVersionString</key><string>$3</string>
+</dict></plist>
+P
+}
+
+upd_release() { # <tag> <prerelease:true|false> — publish whatever is in $UPD/assets
+  local names; names="$(ls "$UPD/assets" | jq -R . | jq -sc .)"
+  jq -n --arg t "$1" --argjson pre "$2" --argjson names "$names" \
+    '{tag_name:$t, draft:false, prerelease:$pre, assets:[$names[] | {name:.}]}' > "$UPD/release.json"
+}
+
+upd_env() { # [release-version] [bundle-id-in-the-image]
+  setup
+  local f v="${1:-0.5.0}"
+  for f in jobs update update_install; do . "$ROOT/lib/$f.sh"; done
+  UPD="$GOBLIN_HOME/upd"; export UPD
+  GOBLIN_VERSION="0.4.1"
+  mkdir -p "$UPD/tmp"; TMPDIR="$UPD/tmp"; export TMPDIR
+
+  APPDIR="$UPD/Apps/Merge Goblin.app"
+  _upd_plist "$APPDIR/Contents/Info.plist" app.mergegoblin.MergeGoblin 0.4.1
+  mkdir -p "$APPDIR/Contents/Resources/engine"; echo old > "$APPDIR/Contents/marker"
+  GOBLIN_APP="$APPDIR/Contents/Resources/engine"
+  AGENT_PLIST="$UPD/agent.plist"      # never this machine's real scheduler; absent = none
+
+  _upd_plist "$UPD/image/Merge Goblin.app/Contents/Info.plist" "${2:-app.mergegoblin.MergeGoblin}" "$v"
+  echo new > "$UPD/image/Merge Goblin.app/Contents/marker"
+  ln -s /Applications "$UPD/image/Applications"
+
+  mkdir -p "$UPD/assets"
+  printf 'fake disk image %s\n' "$v" > "$UPD/assets/MergeGoblin-$v.dmg"
+  ( cd "$UPD/assets" && shasum -a 256 "MergeGoblin-$v.dmg" > SHA256SUMS )
+  upd_release "v$v" false
+
+  mkdir -p "$UPD/bin"
+  cat > "$UPD/bin/gh" <<'S'
+#!/bin/bash
+echo "$*" >> "$UPD/gh.log"
+prev=""; expr=""; dir=""; pats=""
+for a in "$@"; do
+  case "$prev" in --jq) expr="$a" ;; --dir) dir="$a" ;; --pattern) pats="$pats $a" ;; esac
+  prev="$a"
+done
+case "$1 $2" in
+  "api repos/"*"/releases/latest")
+    if [ -n "$expr" ]; then jq -r "$expr" "$UPD/release.json"; else cat "$UPD/release.json"; fi ;;
+  "release download")
+    for p in $pats; do cp "$UPD/assets/$p" "$dir/" || exit 1; done ;;
+  *) exit 1 ;;
+esac
+S
+  chmod +x "$UPD/bin/gh"; PATH="$UPD/bin:$PATH"; export PATH
+
+  update_dmg_attach() { echo "attach" >> "$UPD/calls"; cp -R "$UPD/image/." "$2/"; }
+  update_dmg_detach() { echo "detach" >> "$UPD/calls"; rm -rf "$1"; mkdir "$1"; }
+  # UPD_CUR_TEAM: the installed app's Team ID ("" = ad-hoc). UPD_NEW_SIGNED /
+  # UPD_NEW_TEAM: the downloaded one. UPD_VERIFY_OK: what codesign --verify says.
+  update_sig_team() {
+    if [ "$1" = "$APPDIR" ]; then printf '%s' "${UPD_CUR_TEAM:-}"; return 0; fi
+    [ "${UPD_NEW_SIGNED:-true}" = true ] || return 1
+    printf '%s' "${UPD_NEW_TEAM:-}"
+  }
+  update_sig_verify() { echo "verify" >> "$UPD/calls"; [ "${UPD_VERIFY_OK:-true}" = true ]; }
+  update_relaunch() { echo "relaunch $1 $2" >> "$UPD/calls"; }
+  : > "$UPD/calls"; : > "$UPD/gh.log"
+}
+
+upd_untouched() { # the installed app is exactly as it was, with nothing beside it
+  eq "old" "$(cat "$APPDIR/Contents/marker")" || return 1
+  eq "Merge Goblin.app" "$(ls -A "$UPD/Apps")" || return 1
+  eq "" "$(ls -A "$UPD/tmp")" || { echo "temp files left behind"; return 1; }
+  [ ! -d "$LOCKDIR" ] || { echo "scheduler lock left behind"; return 1; }
+}
+
+upd_refused() { # <expected-error-code> [cmd_update_install args...]
+  local want="$1" out; shift
+  out="$(cmd_update_install --json "$@")" && { echo "installed when it should not have: $out"; return 1; }
+  eq "false" "$(printf '%s' "$out" | jq -r '.ok')" || return 1
+  eq "$want" "$(printf '%s' "$out" | jq -r '.error')" || return 1
+  [ -n "$(printf '%s' "$out" | jq -r '.message')" ] || return 1
+}
+
+test_update_install_happy_path_swaps_the_bundle() (
+  upd_env 0.5.0
+  local out
+  out="$(cmd_update_install --json --relaunch)" || { echo "$out"; return 1; }
+  eq "true"  "$(printf '%s' "$out" | jq -r '.ok')"      || return 1
+  eq "0.5.0" "$(printf '%s' "$out" | jq -r '.version')" || return 1
+  eq "new"   "$(cat "$APPDIR/Contents/marker")"         || return 1
+  eq "0.5.0" "$(update_plist_get "$APPDIR/Contents/Info.plist" CFBundleShortVersionString)" || return 1
+  # no staging directory and no old copy beside it, no temp files, lock released
+  eq "Merge Goblin.app" "$(ls -A "$UPD/Apps")" || return 1
+  eq "" "$(ls -A "$UPD/tmp")" || return 1
+  [ ! -d "$LOCKDIR" ] || return 1
+  grep -q '^detach' "$UPD/calls" || { echo "image never detached"; return 1; }
+  grep -qx "relaunch [0-9]* $APPDIR" "$UPD/calls" || { cat "$UPD/calls"; return 1; }
+  # only the two assets were asked for
+  grep -q 'release download v0.5.0 .*--pattern MergeGoblin-0.5.0.dmg --pattern SHA256SUMS' "$UPD/gh.log" || return 1
+  teardown
+)
+
+test_update_install_refuses_a_checksum_mismatch() (
+  upd_env 0.5.0
+  echo "one more byte" >> "$UPD/assets/MergeGoblin-0.5.0.dmg"   # swapped after the sum was published
+  upd_refused checksum || return 1
+  upd_untouched || return 1
+  # refused before the image was ever opened
+  grep -q '^attach' "$UPD/calls" && { echo "mounted an unverified image"; return 1; }
+  # a sums file with no line for this DMG is no checksum at all
+  printf '%064d  SomethingElse.dmg\n' 0 > "$UPD/assets/SHA256SUMS"
+  upd_refused checksum || return 1
+  # and a release with no checksum asset is refused before downloading anything
+  rm "$UPD/assets/SHA256SUMS"; upd_release v0.5.0 false; : > "$UPD/gh.log"
+  upd_refused no_checksum || return 1
+  grep -q 'release download' "$UPD/gh.log" && return 1
+  upd_untouched || return 1
+  teardown
+)
+
+test_update_install_refuses_an_older_or_equal_version() (
+  upd_env 0.4.0
+  upd_refused not_newer || return 1
+  upd_release v0.4.1 false
+  upd_refused not_newer || return 1
+  grep -q 'release download' "$UPD/gh.log" && { echo "downloaded a release it was going to refuse"; return 1; }
+  upd_untouched || return 1
+  teardown
+)
+
+test_update_install_refuses_a_prerelease() (
+  upd_env 0.5.0
+  upd_release v0.5.0 true
+  upd_refused prerelease || return 1
+  # flagged final but tagged like a prerelease: still no
+  upd_release v0.5.0-rc1 false
+  upd_refused prerelease || return 1
+  grep -q 'release download' "$UPD/gh.log" && return 1
+  upd_untouched || return 1
+  teardown
+)
+
+test_update_install_checks_the_signing_team() (
+  upd_env 0.5.0
+  UPD_CUR_TEAM=ABCDE12345
+  UPD_NEW_TEAM=ZZZZZ99999;  upd_refused team || return 1        # someone else's certificate
+  UPD_NEW_SIGNED=false;     upd_refused team || return 1        # signed install, unsigned update
+  UPD_NEW_SIGNED=true; UPD_NEW_TEAM=ABCDE12345; UPD_VERIFY_OK=false
+  upd_refused signature || return 1                             # right team, broken seal
+  upd_untouched || return 1
+  UPD_VERIFY_OK=true
+  cmd_update_install --json >/dev/null || return 1              # same team, valid: installs
+  eq "new" "$(cat "$APPDIR/Contents/marker")" || return 1
+  teardown
+)
+
+test_update_install_refuses_a_different_app() (
+  upd_env 0.5.0 com.example.NotTheGoblin
+  upd_refused wrong_app || return 1
+  upd_untouched || return 1
+  teardown
+)
+
+test_update_install_waits_for_a_running_review() (
+  upd_env 0.5.0
+  mkdir -p "$JOBS_DIR/j1700000000-1"
+  printf '{"phase":"reviewing","pid":%s}\n' "$$" > "$JOBS_DIR/j1700000000-1/job.json"
+  upd_refused busy || return 1
+  eq "" "$(cat "$UPD/gh.log")" || return 1
+  upd_untouched || return 1
+  teardown
+)
+
+test_update_install_leaves_a_source_install_to_git() (
+  upd_env 0.5.0
+  # install.sh schedules ~/.goblin/app; swapping only the app would split the versions
+  printf '<string>/Users/x/.goblin/app/bin/goblin</string>\n' > "$AGENT_PLIST"
+  upd_refused source_install || return 1
+  eq "" "$(cat "$UPD/gh.log")" || return 1
+  upd_untouched || return 1
+  # a scheduler that runs this app's own engine is fine
+  printf '<string>%s/bin/goblin</string>\n' "$GOBLIN_APP" > "$AGENT_PLIST"
+  cmd_update_install --json >/dev/null || return 1
+  eq "new" "$(cat "$APPDIR/Contents/marker")" || return 1
+  teardown
+)
+
+test_update_install_puts_the_old_app_back_if_interrupted() (
+  upd_env 0.5.0
+  # killed between "move the old app aside" and "move the new one in"
+  UPD_TARGET="$APPDIR"; UPD_STAGE="$UPD/Apps/.merge-goblin-update.x"
+  mkdir -p "$UPD_STAGE"; mv "$APPDIR" "$UPD_STAGE/old.app"
+  _upd_cleanup
+  eq "old" "$(cat "$APPDIR/Contents/marker")" || return 1
+  eq "Merge Goblin.app" "$(ls -A "$UPD/Apps")" || return 1
+  teardown
+)
+
+test_update_install_contract_with_the_app() {
+  # The exact argv Command.swift sends must parse (rc 2 would be a usage error), and a
+  # source checkout must refuse with a reason instead of replacing anything.
+  local sw="$ROOT/Sources/Goblin/Core/Command.swift" argv out rc home
+  argv="$(grep -oE '\["update", "install"[^]]*\]' "$sw" | head -1 | tr -d '[],"')"
+  [ -n "$argv" ] || { echo "Command.swift has no update install argv"; return 1; }
+  home="$(mktemp -d)"
+  # shellcheck disable=SC2086
+  out="$(GOBLIN_HOME="$home" GOBLIN_APP="$ROOT" "$ROOT/bin/goblin" $argv 2>&1)"; rc=$?
+  rm -rf "$home"
+  eq "1" "$rc" || { echo "$out"; return 1; }
+  eq "not_bundled" "$(printf '%s' "$out" | jq -r '.error')" || return 1
+}
+
+test_update_check_asks_releases_when_running_from_the_app() (
+  upd_env 0.5.0
+  eq "0.5.0" "$(update_remote_version)" || return 1
+  upd_release v0.6.0 true
+  eq "" "$(update_remote_version)" || { echo "offered a prerelease"; return 1; }
+  update_instructions | grep -q 'update install' || return 1
+  teardown
+)
+
 test_stale_failures_do_not_mark_the_icon_broken() {
   setup
   . "$ROOT/lib/inbox.sh"; . "$ROOT/lib/attempts.sh"
@@ -1773,6 +2013,17 @@ t "version: one source of truth"         test_version_has_one_source_of_truth
 t "update: version compare"              test_update_version_compare
 t "update: flag clears after upgrade"    test_update_flag_does_not_outlive_the_upgrade
 t "update: throttled, silent offline"    test_update_check_is_throttled_and_silent_when_offline
+t "update: check asks releases from the app" test_update_check_asks_releases_when_running_from_the_app
+t "update install: happy path swaps the app" test_update_install_happy_path_swaps_the_bundle
+t "update install: checksum mismatch refused" test_update_install_refuses_a_checksum_mismatch
+t "update install: older or equal refused" test_update_install_refuses_an_older_or_equal_version
+t "update install: prerelease refused"   test_update_install_refuses_a_prerelease
+t "update install: signing team enforced" test_update_install_checks_the_signing_team
+t "update install: other app refused"    test_update_install_refuses_a_different_app
+t "update install: waits for a review"   test_update_install_waits_for_a_running_review
+t "update install: source install left to git" test_update_install_leaves_a_source_install_to_git
+t "update install: interrupted swap rolls back" test_update_install_puts_the_old_app_back_if_interrupted
+t "update install: argv contract with the app" test_update_install_contract_with_the_app
 t "goblin: voice covers all verdicts"    test_goblin_voice_covers_every_verdict
 t "goblin: legacy markers matched"       test_legacy_markers_still_recognised
 t "render: counts never empty"           test_render_counts_is_never_empty

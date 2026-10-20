@@ -110,6 +110,7 @@ enum TimeoutClass {
     case doctor         // probes github + providers + clones
     case discovery      // network listing (repo search, account list)
     case post           // publishing a review: killing it mid-flight risks a double post
+    case update         // downloading, verifying and swapping in a whole app bundle
 
     var seconds: TimeInterval {
         switch self {
@@ -118,6 +119,9 @@ enum TimeoutClass {
         case .doctor:    return 60
         case .discovery: return 45
         case .post:      return 300
+        // A slow connection must not be cut off mid-download. A kill is still safe:
+        // the engine traps TERM, and an interrupted swap puts the old app back.
+        case .update:    return 900
         }
     }
 }
@@ -219,6 +223,10 @@ enum Command: Equatable {
 
     // the app itself
     case loginItem(on: Bool)
+    /// Replace this app with the latest GitHub release (lib/update_install.sh). Takes
+    /// no value: which release, which file and where it goes are all the engine's call,
+    /// so nothing the UI holds can point it at a different download or destination.
+    case installUpdate
     case openLog
     case openConfig
     case openURL(String)
@@ -230,6 +238,7 @@ enum Command: Equatable {
     static let allowedFlagLiterals: Set<String> = [
         "--json", "--fix", "--refresh", "--limit", "--query",
         "--detach", "--post", "--preview", "--force", "--repo", "--focus", "--provider", "--model", "--saved-edits", "--days",
+        "--relaunch",
     ]
 
     // MARK: - argv
@@ -370,6 +379,10 @@ enum Command: Equatable {
         case .loginItem(let on):
             return .cli(argv: ["app", "login-item", on ? "on" : "off"],
                         timeout: .mutation, mutating: true, json: false)
+        case .installUpdate:
+            // --relaunch: the engine opens the new app once this one has quit.
+            return .cli(argv: ["update", "install", "--json", "--relaunch"],
+                        timeout: .update, mutating: true, json: true)
 
         case .openLog:         return .local(.openLog)
         case .openConfig:      return .local(.openConfig)
