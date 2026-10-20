@@ -81,10 +81,8 @@ git clone https://github.com/Kiril-P/merge-goblin.git && cd merge-goblin
 The installer asks which account to review as, which subscription to use, and which repo to
 watch, then schedules him and installs the app. Re-run it any time to upgrade.
 
-Upgrading is always those two commands — `git pull && ./install.sh`. The Goblin checks once a
-day whether a newer version exists and says so in the panel, in `goblin doctor` and in the log,
-but he never installs it himself: that would mean rewriting the code mid-run and reloading the
-scheduler behind your back. Turn the check off with `goblin config set .update.notify false`.
+A source install upgrades with those same two commands — `git pull && ./install.sh`. See
+[Updating](#updating) for the app from a release.
 
 The installer also drops **Merge Goblin.app** in `~/Applications` — a native SwiftUI menu
 bar app that shows what he's doing, which PRs are waiting for you, and lets you change
@@ -103,6 +101,35 @@ the CLI works without it. Needs macOS 14 or later.
 goblin app rebuild          # rebuild and swap the installed app (from a git checkout)
 goblin app status           # bundle, login item, whether it's running
 ```
+
+## Updating
+
+Once a day the Goblin checks whether a newer version exists and says so in the popover's
+**More** menu, in **Settings > About**, in `goblin doctor` and in the log. Checking never
+installs anything. Turn the check off with `goblin config set .update.notify false`.
+
+**The app from a release:** choose **Install update** (More menu, or Settings > About), or
+run `goblin update install`. He then:
+
+1. asks GitHub for the latest release of this repo (through your `gh` login) and refuses
+   drafts, prereleases, and anything not newer than what you run;
+2. downloads `MergeGoblin-<version>.dmg` and `SHA256SUMS` and refuses a DMG that does not
+   match its checksum, before even opening it;
+3. opens the image read-only and checks that the app inside is Merge Goblin, at that version;
+4. if your installed app is signed by a developer team, requires the new one to be signed
+   by **the same Team ID** and to pass `codesign --verify --deep --strict`;
+5. copies it next to your installed app, swaps the two, deletes the old one and restarts.
+
+Nothing from the download runs until all of that has passed. He waits if a review is running.
+If something fails, your installed app is left as it was.
+
+What that does and does not protect against: the checksum catches a corrupted or swapped
+download, but whoever can publish a release can publish its checksum too. Proof of *who*
+built it comes from the Team ID check, and that only applies once releases are signed with a
+Developer ID. An ad-hoc signed app (every build so far) is updated on the checksum alone.
+
+**Installed with Homebrew:** prefer `brew upgrade --cask merge-goblin`, which keeps brew's
+record in step. **From source:** `git pull && ./install.sh`, as above.
 
 ## Use
 
@@ -321,5 +348,43 @@ every screen to PNG without a window server.
 
 Adding a provider is one file in `lib/providers/` implementing `probe` and `review`.
 Renaming him is one file: `lib/brand.sh`.
+
+### Releasing
+
+`.github/workflows/release.yml` does the building, signing, notarising and publishing when a
+`v*` tag is pushed. What only the maintainer can do:
+
+**Once:**
+
+1. **Developer ID certificate.** Join the Apple Developer Program, create a *Developer ID
+   Application* certificate (Xcode > Settings > Accounts > Manage Certificates), export it as
+   a password-protected `.p12`, and add two repository secrets: `MACOS_CERT_P12`
+   (`base64 -i cert.p12`) and `MACOS_CERT_PASSWORD`. An *Apple Development* certificate will
+   not do: it cannot be notarised.
+2. **Notary credentials.** Create an app-specific password at appleid.apple.com and add
+   `APPLE_ID`, `APPLE_TEAM_ID` and `APPLE_APP_PASSWORD`. Locally,
+   `xcrun notarytool store-credentials <name>` and `NOTARY_PROFILE=<name> scripts/notarize.sh`
+   does the same.
+3. **Tap.** Create `Kiril-P/homebrew-tap` with a `Casks/` directory.
+
+Without the secrets the workflow still publishes, unsigned and un-notarised.
+
+**Every release:**
+
+1. Bump `GOBLIN_VERSION` in `lib/brand.sh` (the only place it is written) and add a
+   `## <version>` section to `CHANGELOG.md`. The test suite fails if either is missing.
+2. `./tests/run.sh && swift test`.
+3. `git tag v<version> && git push origin v<version>`. The workflow refuses a tag that
+   disagrees with `lib/brand.sh`.
+4. Check the release has `MergeGoblin-<version>.dmg`, `SHA256SUMS` and `merge-goblin.rb`.
+   **Never publish one without `SHA256SUMS`**: the in-app updater refuses it.
+5. Copy `merge-goblin.rb` from the release into the tap as `Casks/merge-goblin.rb` and push.
+6. Download the DMG and run `shasum -a 256 -c SHA256SUMS`, `xcrun stapler validate` on it
+   and `spctl -a -vv -t open --context context:primary-signature` on it. Then install the
+   previous version and use **Install update** to make sure the update path works.
+
+The first Developer ID release is accepted by existing ad-hoc installs on its checksum alone.
+From then on the Team ID is pinned: an update signed by anyone else, or not signed, is
+refused. Keep the certificate's team the same across releases.
 
 MIT licensed.
