@@ -28,9 +28,24 @@ log_open() {
 
 die() { log "FATAL: $*"; exit 1; }
 
-# notify <type> <title> <message> — gated on config notify.<type>.
+# notify_payload <title> <message> <sound> <kind> — one line of notify.jsonl.
+#
+# `kind` is what happened (ready, posted, failed, started, budget) and `job` is the
+# manual review it is about, when there is one. The app needs both to offer "Post"
+# on a ready banner and to open THAT review on a click, rather than whichever review
+# happens to be waiting. A job id that is not the engine's own shape is left out.
+notify_payload() {
+  local job="${GOBLIN_JOB_ID:-}"
+  printf '%s' "$job" | grep -qE '^j[0-9]{10}-[0-9]{1,6}$' || job=""
+  jq -nc --arg t "$1" --arg m "$2" --arg s "$3" --arg k "$4" --arg j "$job" \
+     --argjson at "$(now_epoch)" \
+     '{at:$at, title:$t, message:$m, sound:$s, kind:$k} + (if $j != "" then {job:$j} else {} end)'
+}
+
+# notify <type> <title> <message> [kind] — gated on config notify.<type>. `kind`
+# defaults to the type; a finished preview is type "posted" (same switch) but kind "ready".
 notify() {
-  local type="$1" title="$2" message="$3" sound="true"
+  local type="$1" title="$2" message="$3" kind="${4:-$1}" sound="true"
   if command -v cfg_get >/dev/null 2>&1; then
     [ "$(cfg_get ".notify.${type}" true)" = "true" ] || return 0
     sound="$(cfg_get '.notify.sound' true)"
@@ -47,8 +62,7 @@ notify() {
   if pgrep -x GoblinBar >/dev/null 2>&1; then
     goblin_ensure_dirs 2>/dev/null || true
     local q="$GOBLIN_HOME/notify.jsonl"
-    jq -nc --arg t "$title" --arg m "$message" --arg s "$([ "$sound" = "true" ] && echo Glass || echo '')" \
-       --argjson at "$(now_epoch)" '{at:$at, title:$t, message:$m, sound:$s}' >> "$q" 2>/dev/null
+    notify_payload "$title" "$message" "$([ "$sound" = "true" ] && echo Glass || echo '')" "$kind" >> "$q" 2>/dev/null
     if [ "$(wc -l < "$q" 2>/dev/null || echo 0)" -gt 200 ]; then
       tail -n 50 "$q" > "$q.tmp" 2>/dev/null && mv "$q.tmp" "$q"
     fi

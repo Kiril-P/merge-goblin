@@ -84,6 +84,12 @@ final class AppStore {
     private(set) var providersState: LoadState = .idle
     /// How the findings we posted fared; nil until the first read finishes.
     private(set) var stats: ReviewStats?
+    /// Reviews per day and per model over the last two weeks, from events.jsonl.
+    private(set) var usage = UsageReport()
+    /// What each teammate's Goblin did lately; nil until the first read finishes.
+    private(set) var fleetStatus: FleetStatus?
+    private(set) var fleetState: LoadState = .idle
+    private var fleetReadAt: Date?
     private(set) var statsState: LoadState = .idle
     private var statsReadAt: Date?
     private(set) var doctor: [DoctorCheck] = []
@@ -213,7 +219,14 @@ final class AppStore {
 
     private func reloadHistory() {
         // Only the tail: events.jsonl only ever grows, and the list shows the last 80.
-        guard let text = Self.tail(path("events.jsonl"), bytes: 256 * 1024) else { history = []; return }
+        guard let text = Self.tail(path("events.jsonl"), bytes: 256 * 1024) else {
+            history = []
+            if !usage.isEmpty { usage = UsageReport(eventsText: "") }
+            return
+        }
+        // 256 KB is well over two weeks of events for anyone; the usage view only needs 14 days.
+        let nextUsage = UsageReport(eventsText: text)
+        if nextUsage != usage { usage = nextUsage }
         var rows: [HistoryEntry] = []
         for line in text.split(separator: "\n", omittingEmptySubsequences: true).suffix(80) {
             let j = JSON.parse(String(line))
@@ -424,6 +437,28 @@ final class AppStore {
         }
     }
 
+    /// Asks the engine what each teammate's Goblin left on GitHub. The engine caches for a
+    /// few minutes; within two of the last read this does not even spawn it. Keeps the
+    /// last answer on a failure rather than blanking the list.
+    func loadFleetStatus(refresh: Bool = false) async {
+        if !refresh, fleetStatus != nil, let at = fleetReadAt, Date().timeIntervalSince(at) < 120 { return }
+        guard cliConfigured, fleetState != .loading, !snapshot.fleet.isEmpty else { return }
+        fleetState = .loading
+        do {
+            let out = try await CLI.shared.run(.fleetStatus(refresh: refresh))
+            let j = JSON.parse(out.stdout)
+            if let parsed = FleetStatus(json: j) {
+                fleetStatus = parsed
+                fleetReadAt = Date()
+                fleetState = .loaded
+            } else {
+                fleetState = .failed(FleetStatus.failure(j) ?? "Could not see what the team is doing.")
+            }
+        } catch {
+            fleetState = .failed((error as? LocalizedError)?.errorDescription ?? "Could not see what the team is doing.")
+        }
+    }
+
     func isLoadingModels(_ provider: String) -> Bool { modelsLoading.contains(provider) && modelCatalog[provider] == nil }
 
     func runDoctor(fix: Bool = false) async {
@@ -522,8 +557,10 @@ final class AppStore {
         }
     }
 
-    func post(_ job: Job) async {
-        guard postingJobs.insert(job.id).inserted else { return }
+    /// Posts the preview (with any edits made in this app). True once GitHub has it.
+    @discardableResult
+    func post(_ job: Job) async -> Bool {
+        guard postingJobs.insert(job.id).inserted else { return false }
         defer { postingJobs.remove(job.id) }
         // The edits are written to the job's own directory, never passed as a path.
         let dir = (CLI.shared.jobsPath as NSString).appendingPathComponent(job.id)
@@ -533,16 +570,18 @@ final class AppStore {
             try? FileManager.default.removeItem(atPath: file)
         } else {
             do { try e.jsonData().write(to: URL(fileURLWithPath: file), options: .atomic) }
-            catch { say("Could not save your edits.", .error); return }
+            catch { say("Could not save your edits.", .error); return false }
         }
         do {
             _ = try await CLI.shared.run(.postReview(job: job.id))
             edits[job.id] = nil
             reload()
             say("Posted to GitHub.", .success)
+            return self.job(job.id)?.phase != .failed
         } catch {
             reload()
             say((error as? LocalizedError)?.errorDescription ?? "Posting failed.", .error)
+            return false
         }
     }
 
@@ -567,8 +606,9 @@ final class AppStore {
 
     /// Fixed data for the screenshot run, so it never depends on the machine it runs on.
     func seedForSnapshot(doctor checks: [DoctorCheck], accounts accs: [(login: String, active: Bool, configured: Bool)],
-                         stats seeded: ReviewStats? = nil) {
+                         stats seeded: ReviewStats? = nil, fleet: FleetStatus? = nil) {
         if let seeded { stats = seeded; statsReadAt = Date(); statsState = .loaded }
+        if let fleet { fleetStatus = fleet; fleetReadAt = Date(); fleetState = .loaded }
         doctor = checks
         doctorState = .loaded
         accounts = accs

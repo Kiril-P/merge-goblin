@@ -514,7 +514,7 @@ engine_save_preview() {
   local counts; counts="$(render_counts "$work/norm.json")"
   events_append previewed "$pr" "$title" "$url" "$cost" "" "$slug" "$provider" "$model"
   log "  #$pr: preview ready — $counts"
-  notify posted "$GOBLIN_NAME finished 👺" "#$pr is ready to read — $counts"
+  notify posted "$GOBLIN_NAME finished 👺" "#$pr is ready to read — $counts" ready
   job_phase ready "$(jq -nc --arg c "$counts" --argjson n "$(jq '.findings|length' "$work/norm.json")" \
     --argjson cost "${cost:-0}" '{result:{counts:$c, findings:$n, costUsd:$cost}}')"
   status_set '{"state":"idle","activity":""}'

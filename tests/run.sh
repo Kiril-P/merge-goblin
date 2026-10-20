@@ -1828,6 +1828,11 @@ t "auto-post: a held review waits as ready" test_a_held_review_waits_as_a_ready_
 t "stats: classifies our threads"          test_stats_classifies_our_threads
 t "stats: window, cache, failures"         test_stats_window_cache_and_failures
 
+. "$ROOT/tests/fleet_test.sh"
+t "fleet: status reads what each goblin left" test_fleet_status_reads_what_each_goblin_left
+t "fleet: cache, offline, no fleet"        test_fleet_status_cache_offline_and_no_fleet
+t "notify: payload names the job and kind" test_notify_payload_names_the_job_and_kind
+
 printf '\n  %s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -gt 0 ] && { printf '  failed:%b\n\n' "$FAILED"; exit 1; }
 printf '\n'

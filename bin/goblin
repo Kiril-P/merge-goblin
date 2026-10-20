@@ -70,6 +70,7 @@ $GOBLIN_EMOJI $GOBLIN_NAME v$GOBLIN_VERSION — $GOBLIN_TAGLINE
   goblin repos [list|add SLUG|rm SLUG|enable SLUG|disable SLUG]
   goblin provider [list|use <id>|which]
   goblin fleet [list|add LOGIN|rm LOGIN]   teammates also running the $GOBLIN_SHORT
+  goblin fleet status [--json]        what each teammate's $GOBLIN_SHORT did lately
   goblin config [get <path>|set <path> <value>|edit|path]
   goblin log [-f] [-n N]              tail the log
   goblin agent [status|start|stop|reload|label]

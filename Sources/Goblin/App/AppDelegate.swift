@@ -16,7 +16,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         NSApp.setActivationPolicy(.accessory)
         MainMenu.install()
 
-        if Bundle.main.bundleIdentifier != nil { UNUserNotificationCenter.current().delegate = self }
+        if Bundle.main.bundleIdentifier != nil {
+            UNUserNotificationCenter.current().delegate = self
+            Notifier.shared.registerCategories()
+        }
 
         let store = AppStore.shared
         store.start()
@@ -111,10 +114,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
-        await MainActor.run {
-            // The engine's banner text is "#2456 is ready to read…": open the newest
-            // review waiting on you.
-            if let job = AppStore.shared.readyJobs.first { WindowManager.shared.showJob(job.id) }
+        let action = response.actionIdentifier
+        let info = response.notification.request.content.userInfo
+        await Self.handleNotification(action: action, userInfo: info)
+    }
+
+    /// The banner names its job; act on exactly that one. A banner without a job (a
+    /// scheduled review, the daily cap) has nothing to open. "Post" is only honoured
+    /// while the review is still waiting: the banner may be hours old.
+    @MainActor
+    static func handleNotification(action: String, userInfo: [AnyHashable: Any]) async {
+        let store = AppStore.shared
+        store.reloadJobs()
+        let id = userInfo["jobId"] as? String
+        switch NotificationRoute.decide(action: action, userInfo: userInfo, phase: id.flatMap { store.job($0)?.phase }) {
+        case .none:
+            return
+        case .open(let job):
+            WindowManager.shared.showJob(job)
+        case .post(let job):
+            guard let j = store.job(job) else { return }
+            if await !store.post(j) {
+                // No window is up to show the toast; open the review, which says why.
+                Notifier.shared.say(title: "Not posted", body: "\(j.ref) did not post. Open it to see why.", job: j.id)
+                WindowManager.shared.showJob(job)
+            }
         }
     }
 

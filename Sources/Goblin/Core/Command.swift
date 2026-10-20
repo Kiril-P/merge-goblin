@@ -192,6 +192,7 @@ enum Command: Equatable {
     // teammates who also run the Goblin
     case fleetAdd(login: String)
     case fleetRemove(login: String)
+    case fleetStatus(refresh: Bool)          // reads claim refs and review markers; writes only its cache
 
     // identity
     case setIdentity(login: String)    // ^[A-Za-z0-9-]{1,39}$
@@ -319,6 +320,10 @@ enum Command: Equatable {
             return .cli(argv: ["fleet", "add", login], timeout: .mutation, mutating: true, json: false)
         case .fleetRemove(let login):
             return .cli(argv: ["fleet", "rm", login], timeout: .mutation, mutating: true, json: false)
+        case .fleetStatus(let refresh):
+            // Three reads per watched repo, each bounded in bash; the cache makes a repeat free.
+            return .cli(argv: ["fleet", "status", "--json"] + (refresh ? ["--refresh"] : []),
+                        timeout: .doctor, mutating: false, json: true)
 
         case .setIdentity(let login):
             return Command.panelSet("identity", login)

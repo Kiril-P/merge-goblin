@@ -106,7 +106,8 @@ cmd_ctl() {
         list|"") cfg_read | jq -r '.fleet[]?' ;;
         add) cfg_set --arg l "$1" 'if (.fleet | index($l)) then . else .fleet += [$l] end'; echo "fleet: $(cfg_read | jq -r '.fleet | join(", ")')" ;;
         rm)  cfg_set --arg l "$1" '.fleet |= map(select(. != $l))'; echo "fleet: $(cfg_read | jq -r '.fleet | join(", ")')" ;;
-        *) echo "usage: $GOBLIN_SLUG fleet [list|add LOGIN|rm LOGIN]" >&2; return 2 ;;
+        status) . "$LIB_DIR/fleet.sh"; cmd_fleet_status "$@" ;;
+        *) echo "usage: $GOBLIN_SLUG fleet [list|add LOGIN|rm LOGIN|status [--json] [--refresh]]" >&2; return 2 ;;
       esac ;;
 
     config)

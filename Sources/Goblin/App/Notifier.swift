@@ -24,6 +24,9 @@
 //    * Authorization is requested once, lazily, and failure is silent. A tool that
 //      nags for notification permission on every launch is worse than one that
 //      quietly does without.
+//    * A finished preview ("ready") carries its job id and gets Post / Open buttons
+//      (NotificationRoute decides what they do; AppDelegate carries it out). Every
+//      other banner is plain.
 
 import Foundation
 import UserNotifications
@@ -65,6 +68,23 @@ final class Notifier {
                 done(granted)
             }
         }
+    }
+
+    /// "Post" sends the review as it is, the same as the popover's Post button. It runs
+    /// in the background (no window comes forward); "Open" brings the review up.
+    private static let readyCategory = UNNotificationCategory(
+        identifier: NotificationRoute.readyCategory,
+        actions: [
+            UNNotificationAction(identifier: NotificationRoute.postAction, title: "Post", options: []),
+            UNNotificationAction(identifier: NotificationRoute.openAction, title: "Open", options: [.foreground]),
+        ],
+        intentIdentifiers: [])
+
+    /// Registered at launch, so the buttons are there even on a banner from before
+    /// this run that is clicked in Notification Center.
+    func registerCategories() {
+        guard Bundle.main.bundleIdentifier != nil else { return }
+        UNUserNotificationCenter.current().setNotificationCategories([Self.readyCategory])
     }
 
     // MARK: - Draining
@@ -118,17 +138,30 @@ final class Notifier {
             let title = (obj["title"] as? String) ?? "The Merge Goblin"
             let body = (obj["message"] as? String) ?? ""
             let sound = (obj["sound"] as? String) ?? ""
-            post(title: title, body: body, sound: !sound.isEmpty)
+            let kind = (obj["kind"] as? String) ?? ""
+            let job = obj["job"] as? String
+            post(title: title, body: body, sound: !sound.isEmpty,
+                 category: NotificationRoute.category(kind: kind, job: job),
+                 userInfo: NotificationRoute.userInfo(kind: kind, job: job))
         }
     }
 
-    private func post(title: String, body: String, sound: Bool) {
+    /// A banner of the app's own, for things only the app knows (a Post pressed on a
+    /// banner that then failed). Goes through the same authorization as the rest.
+    func say(title: String, body: String, job: String? = nil) {
+        post(title: title, body: body, sound: false, category: nil,
+             userInfo: NotificationRoute.userInfo(kind: "app", job: job))
+    }
+
+    private func post(title: String, body: String, sound: Bool, category: String?, userInfo: [String: String]) {
         ensureAuthorized { [weak self] granted in
             guard granted else { return }
             let content = UNMutableNotificationContent()
             content.title = title
             content.body = body
             if sound { content.sound = .default }
+            if let category { content.categoryIdentifier = category }
+            content.userInfo = userInfo
             // Nil trigger = deliver now. The icon is the app's, automatically,
             // which is the entire point of routing through here.
             let req = UNNotificationRequest(identifier: UUID().uuidString,
