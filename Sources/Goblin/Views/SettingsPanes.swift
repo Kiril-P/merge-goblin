@@ -710,6 +710,7 @@ struct AboutPane: View {
                     }
                 }
             }
+            StatsGroup(store: store)
             SettingsGroup(title: "How it works") {
                 SettingRow(title: "He reads your repo's own review rules.", hint: "No configuration needed; a review guide in the repo is followed.")
                 { EmptyView() }

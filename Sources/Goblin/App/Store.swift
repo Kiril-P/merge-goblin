@@ -82,6 +82,10 @@ final class AppStore {
     private(set) var modelCatalog: [String: [ModelOption]] = [:]
     private var modelsLoading: Set<String> = []
     private(set) var providersState: LoadState = .idle
+    /// How the findings we posted fared; nil until the first read finishes.
+    private(set) var stats: ReviewStats?
+    private(set) var statsState: LoadState = .idle
+    private var statsReadAt: Date?
     private(set) var doctor: [DoctorCheck] = []
     private(set) var doctorState: LoadState = .idle
     private(set) var accounts: [(login: String, active: Bool, configured: Bool)] = []
@@ -371,6 +375,28 @@ final class AppStore {
         }
     }
 
+
+    /// Reads the findings' fate back from GitHub (the CLI caches it for hours, so opening
+    /// the popover is cheap). Keeps the last numbers on a failure instead of blanking them.
+    func loadStats(refresh: Bool = false) async {
+        // The CLI caches for hours; asking again within minutes only spawns a process.
+        if !refresh, stats != nil, let at = statsReadAt, Date().timeIntervalSince(at) < 600 { return }
+        guard cliConfigured, statsState != .loading else { return }
+        statsState = .loading
+        do {
+            let out = try await CLI.shared.run(.stats(days: 30, refresh: refresh))
+            guard let parsed = ReviewStats(json: JSON.parse(out.stdout)) else {
+                statsState = .failed("The Goblin could not read how its findings fared.")
+                return
+            }
+            stats = parsed
+            statsReadAt = Date()
+            statsState = .loaded
+        } catch {
+            statsState = .failed((error as? LocalizedError)?.errorDescription ?? "Could not read how the findings fared.")
+        }
+    }
+
     func isLoadingModels(_ provider: String) -> Bool { modelsLoading.contains(provider) && modelCatalog[provider] == nil }
 
     func runDoctor(fix: Bool = false) async {
@@ -507,7 +533,9 @@ final class AppStore {
     }
 
     /// Fixed data for the screenshot run, so it never depends on the machine it runs on.
-    func seedForSnapshot(doctor checks: [DoctorCheck], accounts accs: [(login: String, active: Bool, configured: Bool)]) {
+    func seedForSnapshot(doctor checks: [DoctorCheck], accounts accs: [(login: String, active: Bool, configured: Bool)],
+                         stats seeded: ReviewStats? = nil) {
+        if let seeded { stats = seeded; statsReadAt = Date(); statsState = .loaded }
         doctor = checks
         doctorState = .loaded
         accounts = accs

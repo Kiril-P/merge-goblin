@@ -14,6 +14,12 @@ struct PopoverView: View {
 
     enum Tab: String, CaseIterable { case queue = "Waiting", recent = "Recent" }
 
+    @MainActor
+    init(store: AppStore, startOn: Tab = .queue) {
+        self.store = store
+        _tab = State(initialValue: startOn)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -116,6 +122,7 @@ struct PopoverView: View {
                 if items.isEmpty {
                     EmptyState(symbol: "clock", mascot: .idleWave, title: "No reviews yet", subtitle: "Reviews you ask for, and the ones the Goblin does on its own, land here.")
                 } else {
+                    StatsCard(store: store)
                     ForEach(items.prefix(10)) { RecentRow(item: $0, store: store) { windows.showJob($0.id) } }
                 }
             }

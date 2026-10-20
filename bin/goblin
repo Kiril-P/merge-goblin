@@ -104,6 +104,7 @@ case "$cmd" in
   accounts) . "$LIB_DIR/discover.sh";    cmd_accounts "$@" ;;
   wizard)   . "$LIB_DIR/discover.sh";    cmd_wizard_state "$@" ;;
   ui|open)  . "$LIB_DIR/app.sh";         cmd_ui "$@" ;;
+  stats)    . "$LIB_DIR/stats.sh";       cmd_stats "$@" ;;
   update)   . "$LIB_DIR/update.sh";      cmd_update "$@" ;;
   version)  echo "$GOBLIN_NAME $GOBLIN_VERSION" ;;
   help|-h|--help) usage ;;

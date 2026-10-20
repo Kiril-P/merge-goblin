@@ -51,6 +51,7 @@ final class CommandTests: XCTestCase {
             .setProviderModel(provider: .claude, model: "sonnet"),
             .repoAdd(slug: "a/b"), .repoRemove(slug: "a/b"), .repoEnable(slug: "a/b", on: true),
             .setIdentity(login: "someone"), .doctor(fix: true), .accounts, .providers(refresh: true),
+            .stats(days: 30, refresh: true),
             .repoSearch(query: "wid", limit: 20), .wizardState, .githubLoginStart, .loginItem(on: true),
         ]
         all += FlagKey.allCases.map { .setFlag(key: $0, on: true) }

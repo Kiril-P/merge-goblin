@@ -223,6 +223,19 @@ he also caps **reviews per run**. Everything is visible in the panel and `goblin
 | `goblin budget 5` | pause for the day once today's spend passes $5 |
 | `maxReviewsPerRun` | hard stop per cycle, so a backlog can't run away |
 
+### How well is he doing?
+
+`goblin stats` reads back the inline threads he posted (they carry a marker, so only his
+are counted) and sorts each into **likely addressed** (resolved, or GitHub marked it
+outdated because the code under it changed), **discussed** (still open, someone replied)
+or **silent**. `--json`, `--days N` (default 30) and `--refresh` are available; the
+answer is cached for six hours. The popover's Recent tab and Settings → About show it too.
+
+"Outdated" can also come from an unrelated edit, and a silent finding isn't necessarily
+wrong, so treat it as a trend line: if the rate drops after you change the prompt or the
+rules, the change probably hurt. Findings that couldn't be pinned to a diff line ride in
+the review body and aren't counted.
+
 ## Configuration
 
 `~/.goblin/config.json` — edit with `goblin config set <jq-path> <value>`, `goblin config edit`, or the panel.

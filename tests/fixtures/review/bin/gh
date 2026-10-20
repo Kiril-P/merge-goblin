@@ -41,6 +41,9 @@ esac
 
 case "$path" in
   user) echo '{"login":"me"}' | emit ;;
+  # REVIEW_FAKE_THREADS: a file served as the reviewThreads response. Unset means GitHub
+  # could not be read, which is what the failure paths in `goblin stats` need.
+  graphql) [ -n "${REVIEW_FAKE_THREADS:-}" ] && [ -f "$REVIEW_FAKE_THREADS" ] && cat "$REVIEW_FAKE_THREADS" || exit 1 ;;
   repos/*/pulls/*/files)
     cat <<JSON | emit
 [{"filename":"src/a.js","status":"modified","additions":2,"deletions":1,

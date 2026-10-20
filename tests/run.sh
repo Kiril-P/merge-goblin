@@ -1576,6 +1576,10 @@ t "refute: fails open, keeps the review's numbers" test_refute_fails_open_and_ke
 t "prompt: others' comments + contract"   test_others_comments_block_and_prompt_contract
 t "claude: tools confined to the checkout" test_claude_adapter_confines_tools_to_the_checkout
 
+. "$ROOT/tests/stats_test.sh"
+t "stats: classifies our threads"          test_stats_classifies_our_threads
+t "stats: window, cache, failures"         test_stats_window_cache_and_failures
+
 printf '\n  %s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -gt 0 ] && { printf '  failed:%b\n\n' "$FAILED"; exit 1; }
 printf '\n'

@@ -19,7 +19,8 @@ let package = Package(
         .testTarget(
             name: "GoblinTests",
             dependencies: ["Goblin"],
-            path: "tests/GoblinTests"
+            path: "tests/GoblinTests",
+            exclude: ["Fixtures"]
         ),
     ]
 )

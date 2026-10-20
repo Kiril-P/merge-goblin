@@ -203,6 +203,7 @@ enum Command: Equatable {
     case inbox(refresh: Bool)
     case accounts
     case providers(refresh: Bool)
+    case stats(days: Int, refresh: Bool)         // days 1...365
     case providerModels(ProviderId, refresh: Bool)
     case repoSearch(query: String, limit: Int)   // query ^[A-Za-z0-9 ._/-]{0,80}$, limit 1...200
 
@@ -224,7 +225,7 @@ enum Command: Equatable {
     /// slug of "-x/y", a search query of "--help") from turning into a flag.
     static let allowedFlagLiterals: Set<String> = [
         "--json", "--fix", "--refresh", "--limit", "--query",
-        "--detach", "--post", "--preview", "--force", "--repo", "--focus", "--provider", "--model", "--saved-edits",
+        "--detach", "--post", "--preview", "--force", "--repo", "--focus", "--provider", "--model", "--saved-edits", "--days",
     ]
 
     // MARK: - argv
@@ -336,6 +337,10 @@ enum Command: Equatable {
             return .cli(argv: refresh ? ["provider", "list", "--refresh", "--json"]
                                       : ["provider", "list", "--json"],
                         timeout: .discovery, mutating: false, json: true)
+        case .stats(let days, let refresh):
+            // A refresh asks GitHub about every PR we posted on, one call each.
+            return .cli(argv: ["stats", "--json", "--days", String(days)] + (refresh ? ["--refresh"] : []),
+                        timeout: .doctor, mutating: false, json: true)
         case .providerModels(let provider, let refresh):
             return .cli(argv: ["provider", "models", provider.rawValue] + (refresh ? ["--refresh"] : []),
                         timeout: .discovery, mutating: false, json: true)
@@ -388,6 +393,8 @@ enum Command: Equatable {
             if !Pattern.githubLogin.accepts(login) { throw CommandRefusal("login is not in the accepted format") }
         case .setProviderModel(_, let model):
             if !Pattern.model.accepts(model) { throw CommandRefusal("model is not in the accepted format") }
+        case .stats(let days, _):
+            if !(1...365).contains(days) { throw CommandRefusal("days is out of range") }
         case .repoSearch(let q, let limit):
             if !Pattern.searchQuery.accepts(q) || !(1...200).contains(limit) { throw CommandRefusal("bad search") }
         case .openURL(let u):

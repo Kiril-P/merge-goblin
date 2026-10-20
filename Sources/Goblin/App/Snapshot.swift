@@ -38,6 +38,7 @@ enum Snapshotter {
         seedSettings(store)
         for scheme in [ColorScheme.dark, .light] {
             let tag = scheme == .dark ? "dark" : "light"
+            await shot(PopoverView(store: store, startOn: .recent), 400, 580, scheme, "\(dir)/popover-recent-\(tag).png")
             for pane in SettingsPane.allCases {
                 SettingsNavigation.shared.pane = pane
                 await shot(SettingsView(store: store), 760, 640, scheme, "\(dir)/settings-\(pane.rawValue)-\(tag).png")
@@ -56,7 +57,13 @@ enum Snapshotter {
                 DoctorCheck(id: "clones", status: .warn, check: "Local clone of acme/billing-api", detail: "Not cloned yet, so the first review will clone it.", fix: "goblin doctor --fix"),
                 DoctorCheck(id: "agent", status: .fail, check: "Scheduler", detail: "The launch agent is installed but not running.", fix: "launchctl kickstart gui/501/app.mergegoblin.agent"),
             ],
-            accounts: [("linus", true, true), ("linus-work", false, false)])
+            accounts: [("linus", true, true), ("linus-work", false, false)],
+            stats: ReviewStats(days: 30, prs: 14, total: .init(n: 37, addressed: 19, discussed: 6, silent: 12), bySeverity: [
+                (name: "blocker", tally: .init(n: 4, addressed: 3, discussed: 1, silent: 0)),
+                (name: "risk", tally: .init(n: 15, addressed: 9, discussed: 2, silent: 4)),
+                (name: "convention", tally: .init(n: 11, addressed: 5, discussed: 2, silent: 4)),
+                (name: "nit", tally: .init(n: 7, addressed: 2, discussed: 1, silent: 4)),
+            ]))
         store.repoSearchOverride = { _ in [
             RepoResult(slug: "acme/billing-api", description: "Invoices, plans and proration", isPrivate: true, permission: "ADMIN", watched: true),
             RepoResult(slug: "acme/web-app", description: "The customer dashboard", isPrivate: true, permission: "WRITE", watched: false),
