@@ -170,8 +170,16 @@ doctor_repos() {
 
 doctor_agent() {
   if [ ! -f "$AGENT_PLIST" ]; then
-    _doc warn "scheduler" "not installed" "./install.sh"; return
+    _doc warn "scheduler" "not installed" "$GOBLIN_SLUG agent install"; return
   fi
+  # launchd cannot read these folders (macOS privacy), so a schedule whose engine
+  # lives in one of them loads fine and then silently never runs.
+  local engine; engine="$(plutil -extract EnvironmentVariables.GOBLIN_APP raw "$AGENT_PLIST" 2>/dev/null)"
+  case "$engine" in
+    "$HOME"/Documents/*|"$HOME"/Downloads/*|"$HOME"/Desktop/*)
+      _doc fail "scheduler" "runs from $engine, which launchd cannot read" \
+        "move the app to /Applications, then: $GOBLIN_SLUG agent install" ;;
+  esac
   if agent_disabled; then
     _doc warn "scheduler" "turned off (persistent)" "$GOBLIN_SLUG on"
   elif agent_running; then

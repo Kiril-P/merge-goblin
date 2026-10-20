@@ -57,10 +57,21 @@ paying for — and switching provider is one click.
 
 ## Install
 
-> Handing this to a teammate? Send them **[docs/TEAM-SETUP.md](docs/TEAM-SETUP.md)** —
-> it assumes nothing and takes about ten minutes.
+Requires macOS 14+, [`gh`](https://cli.github.com), `jq`, and at least one AI CLI you're signed
+into (`brew install gh jq` if you need the first two).
 
-Requires macOS, [`gh`](https://cli.github.com), `jq`, and at least one AI CLI you're signed into.
+**From a release** (none is published yet, so use source below for now) — download `MergeGoblin-<version>.dmg` from the
+[releases page](https://github.com/Kiril-P/merge-goblin/releases), drag **Merge Goblin** to
+Applications and open it. The first-run walkthrough takes it from there, including the
+scheduler that reviews in the background. Releases are notarised when the maintainer's Apple
+credentials are configured; if a build says it is not, right-click the app and choose **Open**
+once.
+
+```bash
+brew install --cask Kiril-P/tap/merge-goblin     # once the tap is published
+```
+
+**From source** — builds the app on your machine with the Xcode command line tools:
 
 ```bash
 git clone https://github.com/Kiril-P/merge-goblin.git && cd merge-goblin
@@ -68,16 +79,12 @@ git clone https://github.com/Kiril-P/merge-goblin.git && cd merge-goblin
 ```
 
 The installer asks which account to review as, which subscription to use, and which repo to
-watch, then schedules him and installs the control panel. Re-run it any time to upgrade.
+watch, then schedules him and installs the app. Re-run it any time to upgrade.
 
 Upgrading is always those two commands — `git pull && ./install.sh`. The Goblin checks once a
 day whether a newer version exists and says so in the panel, in `goblin doctor` and in the log,
 but he never installs it himself: that would mean rewriting the code mid-run and reloading the
 scheduler behind your back. Turn the check off with `goblin config set .update.notify false`.
-
-```bash
-brew install gh jq                      # if you need them
-```
 
 The installer also drops **Merge Goblin.app** in `~/Applications` — a native SwiftUI menu
 bar app that shows what he's doing, which PRs are waiting for you, and lets you change

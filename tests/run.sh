@@ -900,6 +900,22 @@ test_provider_models_are_a_list_of_real_choices() {
   review_env_done
 }
 
+test_agent_install_points_at_this_engine() {
+  # An app, cask or disk image never runs install.sh, so this is the only thing that
+  # puts a scheduler on the machine. The plist must name THIS engine, and a
+  # schedule that fails to load must say so instead of reporting success.
+  review_env
+  local fakehome; fakehome="$(mktemp -d)"
+  HOME="$fakehome" PATH="$ROOT/tests/fixtures/bin:$PATH" "$G" agent install >/dev/null 2>&1
+  local plist; plist="$(ls "$fakehome"/Library/LaunchAgents/*.plist 2>/dev/null | head -1)"
+  [ -n "$plist" ] || { echo "no plist written"; return 1; }
+  grep -q "$ROOT/bin/goblin" "$plist" || { echo "plist does not point at this engine"; return 1; }
+  grep -q "$GOBLIN_HOME" "$plist" || { echo "plist does not carry GOBLIN_HOME"; return 1; }
+  ! grep -q "__[A-Z_]*__" "$plist" || { echo "unreplaced placeholder"; return 1; }
+  rm -rf "$fakehome"
+  review_env_done
+}
+
 # ---------------------------------------------------------------- update ---
 test_update_version_compare() {
   setup
@@ -1403,6 +1419,7 @@ t "review: interrupted job reported"        test_review_interrupted_job_is_repor
 t "review: model override is not persisted" test_review_provider_override_is_not_persisted
 t "provider: list --json matches the app"   test_provider_list_json_is_the_shape_the_app_decodes
 t "provider: models are real choices"      test_provider_models_are_a_list_of_real_choices
+t "agent: install points at this engine"   test_agent_install_points_at_this_engine
 
 printf '\n  %s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -gt 0 ] && { printf '  failed:%b\n\n' "$FAILED"; exit 1; }

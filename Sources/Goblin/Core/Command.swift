@@ -68,7 +68,7 @@ enum ReviewFocus: String, CaseIterable {
 }
 
 enum AgentAction: String, CaseIterable {
-    case start, stop, reload
+    case install, start, stop, reload
 }
 
 /// The boolean settings the panel may flip. Closed on purpose: this is the list

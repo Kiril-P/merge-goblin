@@ -132,11 +132,13 @@ cmd_ctl() {
                 echo "plist:    $AGENT_PLIST"
                 echo "running:  $(agent_running && echo yes || echo no)"
                 echo "disabled: $(agent_disabled && echo yes || echo no)" ;;
+        install) if agent_install; then echo "scheduled every $(cfg_get '.intervalSeconds' 300)s ($AGENT_LABEL)"
+                 else echo "the scheduler did not load — try: $GOBLIN_SLUG doctor" >&2; return 1; fi ;;
         start)  agent_start;  echo "started" ;;
         stop)   agent_stop;   echo "stopped" ;;
         reload) agent_reload; echo "reloaded" ;;
         label)  echo "$AGENT_LABEL" ;;
-        *) echo "usage: $GOBLIN_SLUG agent [status|start|stop|reload|label]" >&2; return 2 ;;
+        *) echo "usage: $GOBLIN_SLUG agent [status|install|start|stop|reload|label]" >&2; return 2 ;;
       esac ;;
 
     fix-account)

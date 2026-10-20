@@ -75,7 +75,55 @@ echo "built: $APP"
 
 if $DMG; then
   D="$OUT/MergeGoblin-$GOBLIN_VERSION.dmg"; rm -f "$D"
-  T="$(mktemp -d)"; cp -R "$APP" "$T/"; ln -s /Applications "$T/Applications"
-  hdiutil create -quiet -volname "$GOBLIN_SHORT" -srcfolder "$T" -ov -format UDZO "$D"
-  rm -rf "$T"; echo "built: $D"
+  BG="$ROOT/design/dmg-background.png"
+  T="$(mktemp -d)"; RW="$T/rw.dmg"; MNT="/Volumes/$GOBLIN_SHORT"
+  # Finder addresses the volume by name, so it has to mount at the default place.
+  hdiutil detach -quiet "$MNT" 2>/dev/null || true
+  # A writable image first, so Finder can be told how the window should look; it is
+  # converted to a compressed read-only image at the end.
+  hdiutil create -quiet -size 120m -fs HFS+ -volname "$GOBLIN_SHORT" -ov "$RW"
+  hdiutil attach -quiet -readwrite -noverify -noautoopen "$RW"
+  cp -R "$APP" "$MNT/"; ln -s /Applications "$MNT/Applications"
+  STYLED=false
+  if [ -f "$BG" ]; then
+    # Finder draws a background at its pixel size, so a 1320x800 picture would be
+    # cropped in a 660x400 window. A two-resolution TIFF is how it picks the sharp one.
+    mkdir "$MNT/.background"
+    sips -z 400 660 "$BG" --out "$T/bg.png" >/dev/null 2>&1 && cp "$BG" "$T/bg@2x.png" \
+      && tiffutil -cathidpicheck "$T/bg.png" "$T/bg@2x.png" -out "$MNT/.background/background.tiff" >/dev/null 2>&1 \
+      || cp "$BG" "$MNT/.background/background.tiff"
+    # Window 660x400, the app on the left and Applications on the right, where the
+    # artwork leaves two clear zones. Finder may be unavailable (SSH, some CI): the
+    # image is then simply plain, which still installs fine.
+    if osascript >/dev/null 2>"$T/osascript.err" <<APPLESCRIPT
+tell application "Finder"
+  tell disk "$GOBLIN_SHORT"
+    open
+    set current view of container window to icon view
+    set toolbar visible of container window to false
+    set statusbar visible of container window to false
+    set the bounds of container window to {200, 120, 860, 520}
+    set opts to the icon view options of container window
+    set arrangement of opts to not arranged
+    set icon size of opts to 112
+    set text size of opts to 13
+    set background picture of opts to file ".background:background.tiff"
+    set position of item "$NAME.app" of container window to {170, 200}
+    set position of item "Applications" of container window to {490, 200}
+    close
+    open
+    update without registering applications
+    delay 1
+    close
+  end tell
+end tell
+APPLESCRIPT
+    then STYLED=true; else head -c 400 "$T/osascript.err" >&2; fi
+  fi
+  sync; hdiutil detach -quiet "$MNT" || { sleep 2; hdiutil detach -quiet -force "$MNT"; }
+  hdiutil convert -quiet "$RW" -format UDZO -imagekey zlib-level=9 -o "$D"
+  rm -rf "$T"
+  $STYLED || echo "(the disk image is plain: Finder could not be scripted)" >&2
+  [ "$SIGN" = "-" ] || codesign --force --timestamp --sign "$SIGN" "$D"
+  echo "built: $D"
 fi

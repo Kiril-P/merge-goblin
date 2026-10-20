@@ -278,6 +278,12 @@ final class WelcomeModel {
     func completeSetup() async {
         guard !completed else { return }
         completed = await store.perform(.wizardComplete)
+        // An app from a disk image or a cask never ran install.sh, so nothing would
+        // watch the chosen repos. Skipped when a scheduler already exists, so a source
+        // install keeps pointing at its own copy of the engine.
+        if completed, !store.snapshot.agentInstalled {
+            await store.perform(.agent(.install))
+        }
     }
 
     // MARK: GitHub sign-in
