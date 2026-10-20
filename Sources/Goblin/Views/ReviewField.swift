@@ -212,8 +212,17 @@ struct ReviewField: View {
     private var footer: some View {
         HStack(spacing: 8) {
             let mode = input.options.mode ?? ReviewMode(rawValue: store.snapshot.settings.manualReviewMode) ?? .preview
-            Chip(text: mode == .preview ? "Preview first" : "Posts directly",
-                 symbol: mode == .preview ? "eye" : "paperplane", tint: mode == .preview ? Theme.accent : Color(nsColor: .systemOrange))
+            // Click to flip, for this review only (Settings holds the default).
+            Button {
+                withAnimation(Motion.quick) { input.options.mode = (mode == .preview ? .post : .preview) }
+            } label: {
+                Chip(text: mode == .preview ? "Preview first" : "Posts directly",
+                     symbol: mode == .preview ? "eye" : "paperplane", tint: mode == .preview ? Theme.accent : Color(nsColor: .systemOrange))
+                    .modifier(LiftOnHover())
+            }
+            .buttonStyle(.plain)
+            .help(mode == .preview ? "You read it before anything is posted. Click to post this one directly."
+                                   : "This review posts as soon as it finishes. Click to read it first.")
             if input.options.focus != .full { Chip(text: input.options.focus.rawValue.capitalized) }
             if input.options.force { Chip(text: "Review anyway", tint: Color(nsColor: .systemOrange)) }
             Spacer()

@@ -152,6 +152,7 @@ struct RecentRow: View {
         }
         .buttonStyle(.plain)
         .hoverRow()
+        .help(item.job != nil ? "Open this review · right-click for more" : "Open on GitHub · right-click for more")
     }
 
     private var title: String { item.job?.displayTitle ?? item.entry?.title ?? "" }
@@ -212,11 +213,13 @@ struct QueueRow: View {
             }
             Spacer(minLength: 4)
             Button("Review") { review(pr) }.buttonStyle(.goblinSmall)
+                .help("Put \(pr.repo)#\(pr.number) in the review field")
         }
         .padding(.horizontal, 6).padding(.vertical, 6)
         .contentShape(Rectangle())
         .hoverRow()
         .onTapGesture { store.openURL(pr.url) }
+        .help("Open on GitHub · right-click for more")
         .accessibilityAction(named: "Open the pull request") { store.openURL(pr.url) }
     }
 }

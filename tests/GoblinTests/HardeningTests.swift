@@ -42,4 +42,14 @@ final class HardeningTests: XCTestCase {
         XCTAssertEqual(c.map(\.1), [1, 2])
         XCTAssertNil(SeverityCounts.parse("no findings"))   // shown as plain text instead
     }
+
+    func testFindingLinksOnlyPointAtTheReviewedCommit() {
+        let f = Finding(json: JSON.parse(#"{"id":"a","path":"src/a b.ts","line":12,"start_line":10,"severity":"risk","title":"t","body":"b"}"#))
+        XCTAssertEqual(f.sourceURL(repo: "acme/widgets", head: "abc123"),
+                       "https://github.com/acme/widgets/blob/abc123/src/a%20b.ts#L10-L12")
+        var evil = f; evil.path = "../../x"
+        XCTAssertNil(evil.sourceURL(repo: "acme/widgets", head: "abc123"))
+        XCTAssertNil(f.sourceURL(repo: "acme/widgets", head: "main?x=1"))
+        XCTAssertNil(f.sourceURL(repo: "evil.com/x/y", head: "abc123"))
+    }
 }

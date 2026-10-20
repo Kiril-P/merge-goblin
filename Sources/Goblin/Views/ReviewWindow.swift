@@ -47,18 +47,41 @@ private struct JobHeader: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(job.displayTitle).font(.system(size: 20, weight: .bold)).lineLimit(3)
+            Button { store.openURL(job.url) } label: {
+                Text(job.displayTitle).font(.system(size: 20, weight: .bold)).lineLimit(3).multilineTextAlignment(.leading)
+            }
+            .buttonStyle(.plain).help("Open the pull request on GitHub")
             HStack(spacing: 6) {
                 Button { store.openURL(job.url) } label: {
-                    Chip(text: job.ref, symbol: "arrow.up.right.square", tint: Theme.accent)
-                }.buttonStyle(.plain)
-                if !job.author.isEmpty { Chip(text: "@\(job.author)") }
+                    Chip(text: job.ref, symbol: "arrow.up.right.square", tint: Theme.accent).modifier(LiftOnHover())
+                }.buttonStyle(.plain).help("Open the pull request")
+                if !job.author.isEmpty, Pattern.githubLogin.accepts(job.author) {
+                    Button { store.openURL("https://github.com/\(job.author)") } label: {
+                        Chip(text: "@\(job.author)").modifier(LiftOnHover())
+                    }.buttonStyle(.plain).help("Open @\(job.author) on GitHub")
+                }
                 if !job.provider.isEmpty {
-                    Chip(text: preview.map { "\($0.provider)/\($0.model)" } ?? job.provider, symbol: "sparkles")
+                    Menu {
+                        Section("Review again with") {
+                            ForEach(ProviderId.allCases, id: \.self) { p in
+                                Button(p.rawValue.capitalized) {
+                                    guard let ref = PRRef.parse("\(job.repo)#\(job.number)") else { return }
+                                    var o = ReviewOptions(); o.provider = p; o.force = true; o.mode = .preview
+                                    Task { if let j = await store.startReview(ref, options: o) { WindowManager.shared.showJob(j.id) } }
+                                }
+                            }
+                        }
+                    } label: {
+                        Chip(text: preview.map { "\($0.provider)/\($0.model)" } ?? job.provider, symbol: "sparkles").modifier(LiftOnHover())
+                    }
+                    .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+                    .help("Who wrote this review — click to get a second opinion from another one")
                 }
                 if job.focus != .full { Chip(text: job.focus.rawValue.capitalized) }
                 if let p = preview {
-                    Chip(text: "\(p.files) files  +\(p.additions) −\(p.deletions)", symbol: "doc.on.doc")
+                    Button { store.openURL(job.url + "/files") } label: {
+                        Chip(text: "\(p.files) files  +\(p.additions) −\(p.deletions)", symbol: "doc.on.doc").modifier(LiftOnHover())
+                    }.buttonStyle(.plain).help("Open the changed files on GitHub")
                 }
                 if let p = preview, !p.risk.isEmpty {
                     Chip(text: "\(p.risk) risk", symbol: "gauge.with.dots.needle.67percent",
@@ -203,7 +226,7 @@ private struct PreviewPane: View {
                 Card { EmptyState(symbol: "checkmark.seal", title: "Suspiciously clean", subtitle: "The reviewer found nothing to flag. The summary is still posted.") }
             } else {
                 ForEach(Array(p.findings.enumerated()), id: \.element.id) { i, f in
-                    FindingCard(finding: f, edits: Binding(
+                    FindingCard(finding: f, sourceURL: f.sourceURL(repo: p.repo, head: p.head), store: store, edits: Binding(
                         get: { store.edits[job.id] ?? ReviewEdits() },
                         set: { store.edits[job.id] = $0 }))
                     .arrive(0.08 + Double(min(i, 8)) * 0.05)
@@ -263,6 +286,8 @@ private struct PreviewPane: View {
 
 struct FindingCard: View {
     let finding: Finding
+    var sourceURL: String? = nil
+    var store: AppStore? = nil
     @Binding var edits: ReviewEdits
     @State private var editing = false
 
@@ -287,7 +312,16 @@ struct FindingCard: View {
                     } label: { SeverityBadge(severity: severity) }
                         .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
                     if let loc = finding.location {
-                        Text(loc).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1)
+                        if let sourceURL, let store {
+                            Button { store.openURL(sourceURL) } label: {
+                                Text(loc).font(.system(size: 11.5, design: .monospaced)).lineLimit(1)
+                                    .padding(.horizontal, 4).padding(.vertical, 1)
+                            }
+                            .buttonStyle(.plain).foregroundStyle(.secondary).hoverRow()
+                            .help("Open these lines on GitHub, at the commit that was reviewed")
+                        } else {
+                            Text(loc).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1)
+                        }
                     }
                     if !finding.anchored {
                         Chip(text: "goes in the summary", symbol: "text.append", tint: Color(nsColor: .systemOrange))

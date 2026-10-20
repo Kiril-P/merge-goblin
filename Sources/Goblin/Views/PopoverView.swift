@@ -43,6 +43,15 @@ struct PopoverView: View {
             footer
         }
         .frame(width: 400, height: 580)
+        .background {
+            // ⌘1 / ⌘2 switch tabs, ⌘, opens Settings
+            Group {
+                Button("") { withAnimation(Motion.spring) { tab = .queue } }.keyboardShortcut("1", modifiers: .command)
+                Button("") { withAnimation(Motion.spring) { tab = .recent } }.keyboardShortcut("2", modifiers: .command)
+                Button("") { windows.showSettings() }.keyboardShortcut(",", modifiers: .command)
+            }
+            .opacity(0).allowsHitTesting(false).accessibilityHidden(true)
+        }
         .background(.background)
         .toasts(store)
         .onAppear { store.refreshFromCLI() }
@@ -52,13 +61,17 @@ struct PopoverView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            GoblinAvatar(size: 34)
-                .opacity(store.snapshot.enabled || !store.snapshot.loaded ? 1 : 0.5)
-                .saturation(store.snapshot.enabled || !store.snapshot.loaded ? 1 : 0)
-                .modifier(Bob(active: store.snapshot.jobsActive > 0 || store.snapshot.state == "reviewing"))
+            Button { windows.showSettings() } label: {
+                GoblinAvatar(size: 34)
+                    .opacity(store.snapshot.enabled || !store.snapshot.loaded ? 1 : 0.5)
+                    .saturation(store.snapshot.enabled || !store.snapshot.loaded ? 1 : 0)
+                    .modifier(Bob(active: store.snapshot.jobsActive > 0 || store.snapshot.state == "reviewing"))
+                    .modifier(LiftOnHover())
+            }
+            .buttonStyle(.plain).help("Settings")
             VStack(alignment: .leading, spacing: 1) {
                 Text("Merge Goblin").font(.system(size: 14, weight: .bold))
-                Text(subtitle).font(.system(size: 11.5)).foregroundStyle(.secondary).lineLimit(1)
+                IdentityLine(store: store)
             }
             Spacer()
             StatePill(store: store)
@@ -80,12 +93,6 @@ struct PopoverView: View {
         return Theme.accent
     }
 
-    private var subtitle: String {
-        let s = store.snapshot
-        if s.login.isEmpty { return "not set up yet" }
-        let model = s.providerModel.isEmpty ? "" : " · \(s.providerModel)"
-        return "@\(s.login) · \(s.providerId)\(model)"
-    }
 
     private var setupBanner: some View {
         Card {
@@ -105,6 +112,7 @@ struct PopoverView: View {
             SectionLabel(text: store.activeJobs.isEmpty ? "Ready to read" : "In progress")
             ForEach(store.liveJobs.prefix(5)) { job in
                 JobRow(job: job, store: store) { windows.showJob($0.id) }
+                    .contextMenu { JobContextMenu(job: job, store: store) }
                     .transition(Motion.row)
             }
         }
@@ -123,16 +131,18 @@ struct PopoverView: View {
                 if store.queue.isEmpty {
                     EmptyState(symbol: "tray", mascot: .empty, title: "Nothing is waiting on you",
                                subtitle: store.snapshot.repos.isEmpty
-                                 ? "Add a repository in Settings and the Goblin will watch it."
+                                 ? "Add a repository and the Goblin will watch it."
                                  : "PRs that ask for your review show up here.")
+                    HStack {
+                        Spacer()
+                        Button(store.snapshot.repos.isEmpty ? "Add a repository" : "Watched repositories…") { windows.showSettings(.repos) }
+                            .buttonStyle(store.snapshot.repos.isEmpty ? .goblinPrimarySmall : .goblinQuiet)
+                        Spacer()
+                    }
                 } else {
                     ForEach(Array(store.queue.prefix(8).enumerated()), id: \.element.id) { i, pr in
-                        QueueRow(pr: pr, store: store) { pr in
-                            Task {
-                                input.repoChoice = nil
-                                input.text = "\(pr.repo)#\(pr.number)"
-                            }
-                        }
+                        QueueRow(pr: pr, store: store) { pr in queueReview(pr) }
+                        .contextMenu { QueueContextMenu(pr: pr, store: store) { queueReview($0) } }
                         .arrive(Double(i) * 0.035)
                     }
                 }
@@ -144,12 +154,23 @@ struct PopoverView: View {
                     StatsCard(store: store).arrive()
                     ForEach(Array(items.prefix(10).enumerated()), id: \.element.id) { i, item in
                         RecentRow(item: item, store: store) { windows.showJob($0.id) }
+                            .contextMenu {
+                                if let j = item.job { JobContextMenu(job: j, store: store) }
+                                else if let e = item.entry { EntryContextMenu(entry: e, store: store) }
+                            }
                             .arrive(Double(i) * 0.035)
                     }
                 }
             }
         }
         .id(tab)   // each tab arrives fresh, so its rows animate in
+    }
+
+    private func queueReview(_ pr: QueuedPR) {
+        Task {
+            input.repoChoice = nil
+            input.text = "\(pr.repo)#\(pr.number)"
+        }
     }
 
     // MARK: footer
@@ -163,6 +184,9 @@ struct PopoverView: View {
                 Button("Snooze until tomorrow") { store.snooze(.tomorrow) }
                 if store.snapshot.snoozeUntil != nil { Button("Stop snoozing") { store.snooze(.clear) } }
                 Divider()
+                Button("Watched repositories…") { windows.showSettings(.repos) }
+                Button("Health check…") { windows.showSettings(.health) }
+                Divider()
                 Button("Open log") { store.openLog() }
                 Button("Copy diagnostics") { store.copyDiagnostics() }
                 if store.snapshot.updateAvailable {
@@ -172,10 +196,17 @@ struct PopoverView: View {
             } label: { Label("More", systemImage: "ellipsis.circle") }
                 .menuStyle(.borderlessButton).fixedSize()
             Spacer()
-            if store.snapshot.spendToday > 0 {
-                Text(String(format: "$%.2f today", store.snapshot.spendToday)).font(.caption).foregroundStyle(.tertiary)
-            } else if store.snapshot.reviewsToday > 0 {
-                Text(verbatim: "\(store.snapshot.reviewsToday) today").font(.caption).foregroundStyle(.tertiary)
+            if store.snapshot.spendToday > 0 || store.snapshot.reviewsToday > 0 {
+                Button { withAnimation(Motion.spring) { tab = .recent } } label: {
+                    Text(verbatim: store.snapshot.spendToday > 0
+                         ? String(format: "$%.2f today", store.snapshot.spendToday)
+                         : "\(store.snapshot.reviewsToday) today")
+                        .font(.caption).padding(.horizontal, 6).padding(.vertical, 3)
+                }
+                .buttonStyle(.plain).foregroundStyle(.tertiary).hoverRow()
+                .help("\(store.snapshot.reviewsToday) review\(store.snapshot.reviewsToday == 1 ? "" : "s") posted today"
+                      + (store.snapshot.spendToday > 0 ? String(format: ", $%.2f reported", store.snapshot.spendToday) : "")
+                      + " — click for recent reviews")
             }
             Button("Quit") { NSApp.terminate(nil) }.buttonStyle(.goblinQuiet)
         }
@@ -224,11 +255,18 @@ struct StatePill: View {
     var body: some View {
         let s = store.snapshot
         Menu {
+            Text(s.statusLine.isEmpty ? label.capitalized : s.statusLine)
+            Divider()
             if s.enabled {
                 Button("Turn off") { store.setPower(false) }
+                Button("Snooze for an hour") { store.snooze(.hour) }
+                Button("Snooze until tomorrow") { store.snooze(.tomorrow) }
             } else {
                 Button("Turn on") { store.setPower(true) }
             }
+            if s.snoozeUntil != nil { Button("Stop snoozing") { store.snooze(.clear) } }
+            Divider()
+            Button("What he does on his own…") { WindowManager.shared.showSettings(.behaviour) }
         } label: {
             HStack(spacing: 6) {
                 ZStack {
@@ -315,5 +353,16 @@ struct Ripple: ViewModifier {
                 guard !Motion.reduced else { return }
                 withAnimation(.easeOut(duration: 1.4).repeatForever(autoreverses: false)) { on = true }
             }
+    }
+}
+
+/// A small rise under the pointer, for things that are buttons but don't look like one.
+struct LiftOnHover: ViewModifier {
+    @State private var hovering = false
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(hovering && !Motion.reduced ? 1.06 : 1)
+            .shadow(color: .black.opacity(hovering ? 0.18 : 0), radius: 5, y: 2)
+            .onHover { h in withAnimation(Motion.quick) { hovering = h } }
     }
 }

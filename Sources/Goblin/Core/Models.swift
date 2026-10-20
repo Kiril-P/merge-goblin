@@ -194,6 +194,20 @@ struct Finding: Identifiable, Equatable {
     /// review body instead — it is still posted, just not pinned.
     var anchored: Bool
 
+    /// The cited lines on GitHub, at the commit that was reviewed. Only built from a
+    /// repo slug, a hex sha and a path without "..", so finding text can't steer it.
+    func sourceURL(repo: String, head: String) -> String? {
+        guard let path, !path.isEmpty, !path.contains(".."), !path.hasPrefix("/"),
+              Pattern.repoSlug.accepts(repo),
+              !head.isEmpty, head.allSatisfy({ $0.isHexDigit }),
+              let enc = path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else { return nil }
+        var u = "https://github.com/\(repo)/blob/\(head)/\(enc)"
+        if let line {
+            if let s = startLine, s < line { u += "#L\(s)-L\(line)" } else { u += "#L\(line)" }
+        }
+        return u
+    }
+
     var location: String? {
         guard let path, !path.isEmpty else { return nil }
         guard let line else { return path }
