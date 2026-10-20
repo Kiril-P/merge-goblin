@@ -55,6 +55,11 @@ private struct JobHeader: View {
                 if let p = preview {
                     Chip(text: "\(p.files) files  +\(p.additions) −\(p.deletions)", symbol: "doc.on.doc")
                 }
+                if let p = preview, !p.risk.isEmpty {
+                    Chip(text: "\(p.risk) risk", symbol: "gauge.with.dots.needle.67percent",
+                         tint: p.risk == "high" ? .red : p.risk == "medium" ? .orange : .green)
+                        .help(p.blastRadius)
+                }
                 if let p = preview, p.costUsd > 0 { Chip(text: String(format: "$%.2f", p.costUsd)) }
             }
         }
@@ -157,6 +162,9 @@ private struct PreviewPane: View {
                         .padding(6).background(Theme.fieldFill, in: RoundedRectangle(cornerRadius: 8))
                 } else {
                     Markdown(text: edits.summary ?? p.summary).font(.system(size: 13.5))
+                }
+                if !p.blastRadius.isEmpty {
+                    Text("If it's wrong: \(p.blastRadius)").font(.system(size: 12)).foregroundStyle(.secondary)
                 }
             }
         }

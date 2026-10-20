@@ -40,6 +40,16 @@
         }
       }
     },
+    "assessment": {
+      "type": ["object", "null"],
+      "description": "How risky is merging this, at a glance.",
+      "additionalProperties": false,
+      "required": ["risk", "blast_radius"],
+      "properties": {
+        "risk": { "type": "string", "enum": ["low", "medium", "high"] },
+        "blast_radius": { "type": "string", "description": "One sentence: what breaks, and for whom, if this is wrong." }
+      }
+    },
     "intent_note": {
       "type": ["object", "null"],
       "description": "Does the PR do what its linked issue asked? Null when there is no linked issue.",

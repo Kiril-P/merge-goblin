@@ -1065,6 +1065,17 @@ S
   teardown
 }
 
+
+test_normalize_keeps_a_valid_assessment_only() {
+  setup
+  . "$ROOT/lib/findings.sh" 2>/dev/null
+  norm() { jq --argjson max 25 -f "$ROOT/share/jq/normalize.jq"; }
+  eq "high" "$(echo '{"summary":"s","findings":[],"assessment":{"risk":"High","blast_radius":"x"}}' | norm | jq -r '.assessment.risk')" || return 1
+  eq "null" "$(echo '{"summary":"s","findings":[],"assessment":{"risk":"catastrophic","blast_radius":"x"}}' | norm | jq -c '.assessment')" || return 1
+  eq "null" "$(echo '{"summary":"s","findings":[]}' | norm | jq -c '.assessment')" || return 1
+  teardown
+}
+
 # ---------------------------------------------------------------- update ---
 test_update_version_compare() {
   setup
@@ -1575,6 +1586,7 @@ t "refute: drops, downgrades, never upgrades" test_refute_apply_drops_downgrades
 t "refute: fails open, keeps the review's numbers" test_refute_fails_open_and_keeps_the_reviews_numbers
 t "prompt: others' comments + contract"   test_others_comments_block_and_prompt_contract
 t "claude: tools confined to the checkout" test_claude_adapter_confines_tools_to_the_checkout
+t "findings: assessment is kept only when valid" test_normalize_keeps_a_valid_assessment_only
 
 . "$ROOT/tests/stats_test.sh"
 t "stats: classifies our threads"          test_stats_classifies_our_threads

@@ -490,6 +490,7 @@ engine_save_preview() {
     | $m[0] + {
         summary: ($n[0].summary // ""),
         intent: ($n[0].intent_note // null),
+        assessment: ($n[0].assessment // null),
         suggestedVerdict: ($n[0].suggested_verdict // "comment"),
         files: ($f[0] | length),
         additions: ([$f[0][].additions] | add // 0),

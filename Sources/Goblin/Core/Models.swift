@@ -229,6 +229,8 @@ struct ReviewPreview: Equatable {
     let costUsd: Double
     var summary: String
     let intent: IntentNote?
+    let risk: String          // "low" | "medium" | "high", or "" when the model did not say
+    let blastRadius: String
     let files: Int
     let additions: Int
     let deletions: Int
@@ -246,6 +248,9 @@ struct ReviewPreview: Equatable {
         model = json["model"].string("")
         costUsd = json["costUsd"].double(0)
         summary = json["summary"].string("")
+        let r = json["assessment"]["risk"].string("")
+        risk = ["low", "medium", "high"].contains(r) ? r : ""
+        blastRadius = json["assessment"]["blast_radius"].string("")
         files = json["files"].int(0)
         additions = json["additions"].int(0)
         deletions = json["deletions"].int(0)

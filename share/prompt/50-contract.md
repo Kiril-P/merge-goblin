@@ -20,6 +20,10 @@ fence around it.
       "suggestion": "optional replacement code for exactly those lines"
     }
   ],
+  "assessment": {
+    "risk": "low" | "medium" | "high",
+    "blast_radius": "one sentence: what breaks, and for whom, if this change is wrong"
+  },
   "intent_note": {
     "issue": "TICKET-123",
     "verdict": "fulfils" | "partial" | "diverges" | "unknown" | "no_ticket",
@@ -54,6 +58,11 @@ or thin test, missing docs or comments, naming or style, a performance concern y
 measure, a theoretical edge case, an error that is logged and retried, anything you are
 unsure about. A missing test is at most a `convention` (if the repo requires one) or a
 `risk`. If the consequence would heal itself or be caught immediately, it is not a blocker.
+
+**`assessment`** is the at-a-glance read for the person deciding whether to look closer:
+`low` for a contained change with an easy rollback, `high` for anything touching money, auth,
+data, migrations or a shared interface many callers depend on. It is about the change, not
+about how many findings you made. Set it to `null` if you cannot tell.
 
 **`suggestion`** must be the exact replacement text for the commented line range —
 omit it unless it applies cleanly on its own.

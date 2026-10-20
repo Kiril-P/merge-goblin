@@ -32,6 +32,13 @@ def canon_suggested:
   schema_version: 1,
   summary: (.summary // ""),
   suggested_verdict: (.suggested_verdict | canon_suggested),
+  assessment: (
+    if (.assessment | type) == "object"
+       and ((.assessment.risk // "" | ascii_downcase) | IN("low","medium","high"))
+    then { risk: (.assessment.risk | ascii_downcase),
+           blast_radius: ((.assessment.blast_radius // "") | .[0:300]) }
+    else null end
+  ),
   intent_note: (
     if (.intent_note | type) == "object" then
       { issue:   (.intent_note.issue // ""),
