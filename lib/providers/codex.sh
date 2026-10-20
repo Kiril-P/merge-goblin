@@ -53,8 +53,40 @@ provider_codex_review() {
   local strict="${schema%.schema.json}.strict.schema.json"
   [ -f "$strict" ] && schema="$strict"
 
-  set -- exec --cd "$dir" --sandbox read-only --skip-git-repo-check \
+  # WHAT THE MODEL CAN READ. Codex reads files by running shell commands, and every
+  # one runs inside codex's macOS sandbox (Seatbelt). `--sandbox read-only` stops writes
+  # and network but lets those commands read the WHOLE disk — tested: `ls ~/.ssh` and
+  # any file under $HOME came straight back. So, where this codex supports permission
+  # profiles, it gets one (provider_codex_profile) that can read:
+  #   * the PR checkout, and nothing else of yours — not $HOME, not ~/.goblin, not the
+  #     other clones, not /tmp or $TMPDIR
+  #   * codex's `:minimal` set: the system files a shell needs to start (/bin, /usr,
+  #     /System, /etc, …), which hold nothing of yours
+  # with no writes anywhere and no network. Verified against codex-cli 0.163 with a real
+  # `codex exec`: the checkout read fine; a file under $HOME, ~/.ssh, /tmp, a write and
+  # `curl` were all refused (the README records the exact test).
+  #
+  # It runs from an EMPTY directory, not the checkout: the checkout is the PR author's,
+  # and codex would otherwise load its AGENTS.md as instructions (project_doc_max_bytes=0
+  # turns that off too, belt and braces) and walk it for project config.
+  #
+  # Older codex builds have no profiles. provider_codex_can_confine finds out by asking
+  # the sandbox to read one file inside and one outside a scratch grant; if it cannot,
+  # the review falls back to `--sandbox read-only` and the log says reads are NOT
+  # confined. Not confined is never silent.
+  local cwd="$raw/cwd" readable=""; mkdir -p "$cwd"
+  [ -d "$dir/.git" ] && readable="$dir"
+  set -- exec --cd "$cwd" --skip-git-repo-check \
         --output-schema "$schema" --output-last-message "$raw/last.txt" --json
+  if provider_codex_can_confine "$bin" "$raw"; then
+    set -- "$@" -c 'default_permissions="goblin"' -c "$(provider_codex_profile "$readable")"
+    GOBLIN_P_CONFINED=true
+  else
+    set -- "$@" --sandbox read-only
+    GOBLIN_P_CONFINED=false
+    log "  codex: this codex has no permission profiles, so its reads are NOT confined to the checkout (--sandbox read-only can read the whole disk). Update codex to fix."
+  fi
+  set -- "$@" -c 'project_doc_max_bytes=0'
   [ -n "$model" ] && set -- "$@" --model "$model"
   [ -n "$eff" ]   && set -- "$@" -c "model_reasoning_effort=\"$eff\""
   # The user's own config.toml can load plugins, MCP servers and hooks that are
@@ -65,8 +97,9 @@ provider_codex_review() {
 
   # `codex exec -` reads the prompt from stdin, which avoids both argv length
   # limits on large diffs and any flag/positional ambiguity.
-  run_with_timeout "$to" "$bin" "$@" - \
-    > "$raw/stdout.jsonl" 2> "$raw/stderr.txt" < "$pf" || rc=$?
+  ( cd "$cwd" || exit 1
+    run_with_timeout "$to" "$bin" "$@" - \
+      > "$raw/stdout.jsonl" 2> "$raw/stderr.txt" < "$pf" ) || rc=$?
 
   GOBLIN_P_DURATION_MS=$(( ($(now_epoch) - t0) * 1000 ))
   GOBLIN_P_MODEL="${model:-codex-default}"
@@ -87,6 +120,41 @@ provider_codex_review() {
   findings_extract "$raw/last.txt" "$out" && return 0
   GOBLIN_P_ERRKIND=bad_output; GOBLIN_P_ERRMSG="no JSON in final message"
   return 2
+}
+
+# _codex_toml_str <s> — a TOML basic string ("…" with \ and " escaped). Fails on control
+# characters, which no path we hand codex should contain.
+_codex_toml_str() {
+  case "$1" in *[[:cntrl:]]*) return 1 ;; esac
+  printf '"%s"' "$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+}
+
+# provider_codex_profile [readable-dir] — the `-c` override defining the "goblin"
+# permission profile: codex's minimal system set readable, the temp dirs explicitly
+# denied (`:minimal` lets /tmp through otherwise), the one directory readable, and no
+# write or network grant at all. A more specific path beats a broader one, so a checkout
+# that happens to live under a temp dir is still readable.
+provider_codex_profile() {
+  local p='permissions.goblin.filesystem={":minimal"="read", ":tmpdir"="none", "/tmp"="none", "/private/tmp"="none"' q
+  if [ -n "${1:-}" ] && q="$(_codex_toml_str "$1")"; then p="$p, $q=\"read\""; fi
+  printf '%s}' "$p"
+}
+
+# provider_codex_can_confine <bin> <scratch-dir> — 0 when this codex's sandbox, given the
+# profile above, reads inside the grant AND refuses outside it. Both halves matter: a
+# codex that ignores the unknown keys would pass the first and fail the second.
+provider_codex_can_confine() {
+  local bin="$1" d="$2/confine-probe" prof
+  rm -rf "$d"; mkdir -p "$d/in" "$d/out" || return 1
+  echo inside > "$d/in/f"; echo outside > "$d/out/f"
+  prof="$(provider_codex_profile "$d/in")"
+  ( cd "$d" && run_with_timeout 20 "$bin" sandbox -c 'default_permissions="goblin"' -c "$prof" -- /bin/cat "$d/in/f" ) \
+    2>/dev/null | grep -qx inside || { rm -rf "$d"; return 1; }
+  if ( cd "$d" && run_with_timeout 20 "$bin" sandbox -c 'default_permissions="goblin"' -c "$prof" -- /bin/cat "$d/out/f" ) \
+       2>/dev/null | grep -q outside; then
+    rm -rf "$d"; return 1
+  fi
+  rm -rf "$d"; return 0
 }
 
 # Straight from the CLI's own catalog, so the list is whatever this account can use.

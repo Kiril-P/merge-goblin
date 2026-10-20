@@ -84,6 +84,8 @@ enum FlagKey: String, CaseIterable {
     case notifySound
     case skipIfHumanReviewed
     case refutePass
+    case skipBots             // skip.bots: leave dependency-bot PRs alone
+    case skipDocsOnly         // skip.docsOnly: leave docs-only PRs alone
 
     /// The name bash sees. Kebab-case because that is the CLI's convention.
     var cliName: String {
@@ -98,6 +100,8 @@ enum FlagKey: String, CaseIterable {
         case .notifySound:       return "notify-sound"
         case .skipIfHumanReviewed: return "skip-if-human-reviewed"
         case .refutePass:        return "refute-pass"
+        case .skipBots:          return "skip-bots"
+        case .skipDocsOnly:      return "skip-docs-only"
         }
     }
 }
@@ -192,6 +196,9 @@ enum Command: Equatable {
     case repoAdd(slug: String)
     case repoRemove(slug: String)
     case repoEnable(slug: String, on: Bool)
+    /// Who reviews this one repo. nil provider = follow the global provider again (the
+    /// model is then dropped too). model "" = that provider's configured model.
+    case setRepoProvider(slug: String, provider: ProviderId?, model: String)   // model ^[A-Za-z0-9._:-]{0,64}$
 
     // teammates who also run the Goblin
     case fleetAdd(login: String)
@@ -324,6 +331,9 @@ enum Command: Equatable {
         case .repoEnable(let slug, let on):
             return .cli(argv: ["repos", on ? "enable" : "disable", slug],
                         timeout: .mutation, mutating: true, json: false)
+        case .setRepoProvider(let slug, let provider, let model):
+            return Command.panelSet("repo-provider", slug, provider?.rawValue ?? "default",
+                                    provider == nil ? "" : model)
 
         case .fleetAdd(let login):
             return .cli(argv: ["fleet", "add", login], timeout: .mutation, mutating: true, json: false)
@@ -412,6 +422,9 @@ enum Command: Equatable {
             if !Pattern.jobId.accepts(job) { throw CommandRefusal("not a job id") }
         case .repoAdd(let slug), .repoRemove(let slug), .repoEnable(let slug, _):
             if !Pattern.repoSlug.accepts(slug) { throw CommandRefusal("repo is not in the accepted format") }
+        case .setRepoProvider(let slug, _, let model):
+            if !Pattern.repoSlug.accepts(slug) { throw CommandRefusal("repo is not in the accepted format") }
+            if !Pattern.model.accepts(model) { throw CommandRefusal("model is not in the accepted format") }
         case .setIdentity(let login), .fleetAdd(let login), .fleetRemove(let login):
             if !Pattern.githubLogin.accepts(login) { throw CommandRefusal("login is not in the accepted format") }
         case .setProviderModel(_, let model):

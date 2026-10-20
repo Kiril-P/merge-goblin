@@ -185,11 +185,19 @@ struct RecentRow: View {
 
     private var symbol: String {
         if let j = item.job { return Theme.symbol(for: j.phase) }
-        return item.entry?.kind == .failed ? "exclamationmark.triangle.fill" : "checkmark.circle.fill"
+        switch item.entry?.kind {
+        case .failed: return "exclamationmark.triangle.fill"
+        case .skipped: return Theme.symbol(for: .skipped)
+        default: return "checkmark.circle.fill"
+        }
     }
     private var tint: Color {
         if let j = item.job { return Theme.color(for: j.phase) }
-        return item.entry?.kind == .failed ? Color(nsColor: .systemRed) : Theme.accent
+        switch item.entry?.kind {
+        case .failed: return Color(nsColor: .systemRed)
+        case .skipped: return Theme.color(for: .skipped)
+        default: return Theme.accent
+        }
     }
 
     private func act() {

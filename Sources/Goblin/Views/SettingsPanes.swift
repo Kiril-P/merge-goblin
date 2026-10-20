@@ -321,9 +321,10 @@ struct ReposPane: View {
                 StatusLine(kind: .info, text: "Nothing yet. Search below, or paste owner/name.")
             }
             ForEach(Array(store.snapshot.repos.enumerated()), id: \.element.slug) { i, repo in
-                SettingRow(title: repo.slug, hint: repo.enabled ? nil : "Paused — not being watched.",
+                SettingRow(title: repo.slug, hint: hint(for: repo),
                            last: i == store.snapshot.repos.count - 1) {
                     HStack(spacing: 12) {
+                        RepoProviderControl(store: store, repo: repo)
                         Toggle("", isOn: Binding(
                             get: { repo.enabled },
                             set: { on in Task { await store.perform(.repoEnable(slug: repo.slug, on: on)) } }))
@@ -335,6 +336,13 @@ struct ReposPane: View {
                 }
             }
         }
+    }
+
+    private func hint(for repo: Snapshot.WatchedRepo) -> String? {
+        if !repo.enabled { return "Paused — not being watched." }
+        guard !repo.provider.isEmpty else { return nil }
+        let name = ProviderInfo.displayName(repo.provider)
+        return repo.model.isEmpty ? "Reviewed with \(name)." : "Reviewed with \(name) · \(repo.model)."
     }
 
     // MARK: search
@@ -422,6 +430,66 @@ struct ReposPane: View {
         guard manualValid else { return }
         let slug = manual
         Task { if await store.perform(.repoAdd(slug: slug), success: "Now watching \(slug).") { manual = "" } }
+    }
+}
+
+/// Who reviews one watched repo: "Default" (the provider chosen in Reviewer) or a named
+/// provider, plus a model from that provider's own list. Applies to scheduled reviews and
+/// to reviews by number that don't pick a provider themselves.
+private struct RepoProviderControl: View {
+    let store: AppStore
+    let repo: Snapshot.WatchedRepo
+
+    private var current: ProviderId? { ProviderId(rawValue: repo.provider) }
+    private var globalName: String { ProviderInfo.displayName(store.snapshot.providerId) }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Menu {
+                Button { set(nil, model: "") } label: { check(current == nil, "Default (\(globalName))") }
+                Divider()
+                ForEach(ProviderId.allCases, id: \.self) { p in
+                    Button { set(p, model: "") } label: { check(current == p, label(p)) }
+                }
+            } label: {
+                HStack(spacing: 5) {
+                    Text(verbatim: current.map { ProviderInfo.displayName($0.rawValue) } ?? "Default")
+                        .lineLimit(1)
+                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 9).padding(.vertical, 5)
+                .background(Theme.fieldFill, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 0.5))
+            }
+            .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+            .help("Which AI reviews this repo")
+            if let p = current {
+                ModelMenu(store: store, provider: p.rawValue,
+                          selection: Binding(get: { repo.model }, set: { set(p, model: $0) }),
+                          defaultLabel: "Its usual model")
+                    .frame(width: 150)
+            }
+        }
+    }
+
+    private func label(_ p: ProviderId) -> String {
+        let name = ProviderInfo.displayName(p.rawValue)
+        guard let info = store.providers.first(where: { $0.name == p.rawValue }) else { return name }
+        return info.ready ? name : "\(name) (not ready)"
+    }
+
+    @ViewBuilder private func check(_ on: Bool, _ text: String) -> some View {
+        if on { Label(text, systemImage: "checkmark") } else { Text(verbatim: text) }
+    }
+
+    private func set(_ provider: ProviderId?, model: String) {
+        guard provider != current || model != repo.model else { return }
+        let slug = repo.slug
+        let what = provider.map { ProviderInfo.displayName($0.rawValue) + (model.isEmpty ? "" : " · \(model)") }
+        Task {
+            await store.perform(.setRepoProvider(slug: slug, provider: provider, model: model),
+                                success: what.map { "\(slug) is reviewed with \($0)." } ?? "\(slug) uses the default provider again.")
+        }
     }
 }
 
@@ -565,6 +633,15 @@ struct BehaviourPane: View {
                 FlagRow(store: store, title: "Show a status on the commit",
                         hint: "A small “Merge Goblin / review” check next to the PR's other checks.",
                         value: s.postCommitStatus, last: true, command: { .setFlag(key: .postCommitStatus, on: $0) })
+            }
+            SettingsGroup(title: "What he leaves alone",
+                          footer: "Checked before any AI runs, so a skipped PR costs nothing. PRs that only touch lockfiles, minified bundles, snapshots or generated code are always left alone; that list and per-repo overrides live in the config file (skip.paths, repos[].skip). A review you ask for by number says why it was skipped and can be forced.") {
+                FlagRow(store: store, title: "Dependency bot PRs",
+                        hint: "Leave Dependabot, Renovate and similar bots' PRs alone.",
+                        value: s.skipBots, command: { .setFlag(key: .skipBots, on: $0) })
+                FlagRow(store: store, title: "Docs-only PRs",
+                        hint: "Leave PRs that only change Markdown or docs/ alone.",
+                        value: s.skipDocsOnly, last: true, command: { .setFlag(key: .skipDocsOnly, on: $0) })
             }
             SettingsGroup(title: "Limits", footer: "Limits protect your subscription from a big backlog. They don't apply to a review you ask for by number.") {
                 NumberRow(store: store, title: "Reviews per day", hint: "He stops for the day after this many.",

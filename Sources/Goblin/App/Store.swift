@@ -239,6 +239,7 @@ final class AppStore {
             case "posted": kind = .posted
             case "failed": kind = .failed
             case "previewed": kind = .previewed
+            case "skipped": kind = .skipped
             default: continue
             }
             let at = j["at"].double(0)

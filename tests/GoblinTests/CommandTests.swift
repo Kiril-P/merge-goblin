@@ -65,6 +65,8 @@ final class CommandTests: XCTestCase {
             .setVerdictMode(.comment), .setAllowApprove(false), .setProvider(.claude),
             .setProviderModel(provider: .claude, model: "sonnet"),
             .repoAdd(slug: "a/b"), .repoRemove(slug: "a/b"), .repoEnable(slug: "a/b", on: true),
+            .setRepoProvider(slug: "a/b", provider: .cursor, model: "x"),
+            .setRepoProvider(slug: "a/b", provider: nil, model: ""),
             .setIdentity(login: "someone"), .doctor(fix: true), .accounts, .providers(refresh: true),
             .stats(days: 30, refresh: true), .fleetStatus(refresh: true), .fleetStatus(refresh: false),
             .repoSearch(query: "wid", limit: 20), .wizardState, .githubLoginStart, .loginItem(on: true),
@@ -85,6 +87,22 @@ final class CommandTests: XCTestCase {
             XCTAssertFalse(key.cliName.contains("."), key.cliName)
             XCTAssertFalse(key.cliName.lowercased().contains("bin"), key.cliName)
         }
+    }
+
+    func testRepoProviderGoesThroughThePanelAndIsValidated() throws {
+        XCTAssertEqual(try argv(.setRepoProvider(slug: "acme/widgets", provider: .codex, model: "gpt-5")),
+                       ["panel", "set", "repo-provider", "acme/widgets", "codex", "gpt-5"])
+        // back to the global provider: the model goes with it
+        XCTAssertEqual(try argv(.setRepoProvider(slug: "acme/widgets", provider: nil, model: "gpt-5")),
+                       ["panel", "set", "repo-provider", "acme/widgets", "default", ""])
+        XCTAssertThrowsError(try Command.setRepoProvider(slug: "-x/y", provider: .claude, model: "").validatedPlan())
+        XCTAssertThrowsError(try Command.setRepoProvider(slug: "a/b", provider: .claude, model: "--help").validatedPlan())
+        XCTAssertThrowsError(try Command.setRepoProvider(slug: "a/b", provider: .claude, model: "x y").validatedPlan())
+    }
+
+    func testSkipFlagsUseTheCLINames() throws {
+        XCTAssertEqual(try argv(.setFlag(key: .skipBots, on: false)), ["panel", "set", "flag", "skip-bots", "off"])
+        XCTAssertEqual(try argv(.setFlag(key: .skipDocsOnly, on: true)), ["panel", "set", "flag", "skip-docs-only", "on"])
     }
 
     func testPatterns() {

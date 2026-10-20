@@ -184,8 +184,11 @@ claim_try_comment() {
   sleep 20   # settle window: must exceed API read-after-write lag and clock skew
 
   local winner
-  winner="$(gh api --paginate "repos/$slug/issues/$pr/comments?per_page=100" --jq \
-    "[.[] | select(.body != null and (.body | contains(\"$GOBLIN_MARKER_NS:claim\")) and (.body | contains(\"$head\"))) | .id] | min" 2>/dev/null)"
+  # The minimum over ALL pages: per page (`--paginate --jq`), page one of a busy PR said
+  # `null`, the real winner came second, and nobody ever matched `$mine`.
+  winner="$(gh_api_all "repos/$slug/issues/$pr/comments?per_page=100" \
+    | jq -r --arg c "$GOBLIN_MARKER_NS:claim" --arg h "$head" \
+        '[.[] | select(.body != null and (.body | contains($c)) and (.body | contains($h))) | .id] | min // empty' 2>/dev/null)"
   if [ "$winner" = "$mine" ]; then
     CLAIM_COMMENT_ID="$mine"; CLAIM_SLUG="$slug"
     return 0

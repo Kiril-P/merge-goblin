@@ -44,6 +44,21 @@ goblin_default_config() {
   "update": { "notify": true, "checkEverySecs": 86400 },
   "maxReviewsPerDay": 20,
   "skipIfHumanReviewed": true,
+  "skip": {
+    "bots": true,
+    "botLogins": ["dependabot", "dependabot-preview", "renovate", "renovate-bot", "snyk-bot", "depfu", "greenkeeper", "pyup-bot"],
+    "docsOnly": false,
+    "docsPaths": ["*.md", "*.mdx", "*.markdown", "*.rst", "docs/**"],
+    "paths": [
+      "package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "pnpm-lock.yaml", "bun.lock", "bun.lockb",
+      "Podfile.lock", "Gemfile.lock", "go.sum", "Cargo.lock", "composer.lock", "poetry.lock",
+      "Pipfile.lock", "uv.lock", "mix.lock", "pubspec.lock", "Package.resolved", "flake.lock",
+      "*.min.js", "*.min.css", "*.js.map", "*.css.map",
+      "**/__snapshots__/**", "*.snap",
+      "**/__generated__/**", "*.generated.*", "*.pb.go", "*_pb2.py", "*_pb2_grpc.py",
+      "**/dist/**", "**/node_modules/**", "vendor/**"
+    ]
+  },
   "manualReviewMode": "preview",
   "maxConcurrentJobs": 2,
   "lastRepo": "",
@@ -111,7 +126,9 @@ cfg_backfill_defaults() {
 }
 
 # --- repos ----------------------------------------------------------------
-# Each entry: {slug, enabled, promptPath, login}
+# Each entry: {slug, enabled, promptPath, login, provider?, model?, skip?}
+#   provider/model  who reviews THIS repo (cfg_repo_provider); empty = the global one
+#   skip            a partial `skip` object merged over the global one (lib/skip.sh)
 cfg_repos_enabled() {
   cfg_read | jq -r '.repos[]? | select(.enabled != false) | .slug' 2>/dev/null
 }
@@ -140,6 +157,29 @@ cfg_repo_set_field() {
   val="$(printf '%s' "$raw" | jq -R 'tonumber? // (if . == "true" then true elif . == "false" then false else . end)')"
   cfg_set --arg s "$slug" --arg f "$field" --argjson v "$val" \
     '.repos |= map(if .slug == $s then .[$f] = $v else . end)'
+}
+
+# cfg_repo_set_provider <slug> <provider|default> [model]
+#   who reviews this repo. `default` (or empty) removes both fields, so the repo follows
+#   the global provider again. The model is only kept together with a provider.
+#   Returns 2 on a value it refuses, 1 when the repo is not watched.
+cfg_repo_set_provider() {
+  local slug="$1" prov="${2:-}" model="${3:-}"
+  printf '%s' "$slug" | grep -qE '^[A-Za-z0-9][A-Za-z0-9._-]{0,99}/[A-Za-z0-9._-]{1,100}$' || return 2
+  cfg_read | jq -e --arg s "$slug" 'any(.repos[]?; .slug == $s)' >/dev/null 2>&1 || return 1
+  case "$prov" in
+    ""|default)
+      cfg_set --arg s "$slug" '.repos |= map(if .slug == $s then del(.provider, .model) else . end)' ;;
+    claude|codex|cursor)
+      # starts with a letter or digit: a model name is handed to the provider's CLI as
+      # the value of --model, and must never be able to look like a flag itself
+      if [ -n "$model" ]; then
+        printf '%s' "$model" | grep -qE '^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$' || return 2
+      fi
+      cfg_set --arg s "$slug" --arg p "$prov" --arg m "$model" \
+        '.repos |= map(if .slug == $s then (.provider = $p | if $m == "" then del(.model) else .model = $m end) else . end)' ;;
+    *) return 2 ;;
+  esac
 }
 
 cfg_repo_rm()     { cfg_set --arg s "$1" '.repos |= map(select(.slug != $s))'; }

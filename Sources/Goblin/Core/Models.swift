@@ -101,8 +101,9 @@ struct Job: Identifiable, Equatable {
     var pid: Int
     var error: String
     var errorDetail: String
-    var reason: String        // why a skipped job was skipped
-    var counts: String        // "🔴 1 blocker · ⚪ 1 nit"
+    var reason: String        // why a skipped job was skipped (a code)
+    var reasonDetail: String  // …and in words, when the engine gave some (skip rules do)
+    var counts: String       // "🔴 1 blocker · ⚪ 1 nit"
     var findingCount: Int
     var reviewURL: String
     var costUsd: Double
@@ -133,6 +134,7 @@ struct Job: Identifiable, Equatable {
         error = json["error"].string("")
         errorDetail = json["errorDetail"].string("")
         reason = json["reason"].string("")
+        reasonDetail = json["reasonDetail"].string("")
         counts = json["result"]["counts"].string("")
         findingCount = json["result"]["findings"].int(0)
         reviewURL = json["result"]["reviewUrl"].string("")
@@ -174,9 +176,14 @@ struct Job: Identifiable, Equatable {
         switch reason {
         case "already_reviewed": return "The Goblin already reviewed this exact commit."
         case "closed": return "This pull request is already merged or closed."
-        default: return "Skipped."
+        case "bot_author": return "Opened by a dependency bot, and those are skipped." + Job.detail(reasonDetail)
+        case "skip_paths": return "Only lockfiles or generated files changed." + Job.detail(reasonDetail)
+        case "docs_only": return "Only documentation changed, and docs-only PRs are skipped." + Job.detail(reasonDetail)
+        default: return reasonDetail.isEmpty ? "Skipped." : "Skipped: \(reasonDetail)."
         }
     }
+
+    private static func detail(_ d: String) -> String { d.isEmpty ? "" : " (\(d))" }
 }
 
 // MARK: - A review waiting to be read
@@ -341,7 +348,8 @@ struct QueuedPR: Identifiable, Equatable {
 }
 
 struct HistoryEntry: Identifiable, Equatable {
-    enum Kind { case posted, failed, previewed }
+    /// skipped: the scheduler left a noisy PR alone (skip rules); `reason` says why.
+    enum Kind { case posted, failed, previewed, skipped }
     let id: String
     let kind: Kind
     let repo: String
@@ -369,7 +377,9 @@ struct ProviderInfo: Identifiable, Equatable {
     var id: String { name }
     var ready: Bool { available && authed }
 
-    var displayName: String {
+    var displayName: String { ProviderInfo.displayName(name) }
+
+    static func displayName(_ name: String) -> String {
         switch name {
         case "claude": return "Claude"
         case "codex": return "Codex"
@@ -440,7 +450,7 @@ struct Snapshot: Equatable {
     var waiting = 0
     var jobsActive = 0
     var jobsReady = 0
-    var repos: [(slug: String, enabled: Bool)] = []
+    var repos: [WatchedRepo] = []
     var fleet: [String] = []
     var settings = Settings()
 
@@ -466,7 +476,18 @@ struct Snapshot: Equatable {
         var notifyFailed = true
         var notifyBudget = true
         var notifySound = true
+        var skipBots = true
+        var skipDocsOnly = false
         var models: [String: String] = [:]
+    }
+
+    /// A watched repo. `provider` empty = reviewed by the global provider; `model` empty =
+    /// that provider's configured model.
+    struct WatchedRepo: Equatable {
+        var slug: String
+        var enabled: Bool
+        var provider: String = ""
+        var model: String = ""
     }
 
     static func == (a: Snapshot, b: Snapshot) -> Bool {
@@ -477,7 +498,7 @@ struct Snapshot: Equatable {
             && a.snoozeUntil == b.snoozeUntil && a.waiting == b.waiting && a.jobsActive == b.jobsActive
             && a.jobsReady == b.jobsReady && a.settings == b.settings && a.updateAvailable == b.updateAvailable
             && a.agentRunning == b.agentRunning && a.identityOK == b.identityOK && a.activity == b.activity
-            && a.repos.map(\.slug) == b.repos.map(\.slug) && a.repos.map(\.enabled) == b.repos.map(\.enabled)
+            && a.repos == b.repos
             && a.fleet == b.fleet && a.pausedReason == b.pausedReason && a.reviewsTotal == b.reviewsTotal
             && a.version == b.version && a.updateLatest == b.updateLatest && a.updateURL == b.updateURL
             && a.agentInstalled == b.agentInstalled
@@ -517,7 +538,10 @@ struct Snapshot: Equatable {
         jobsActive = ui["jobs"]["active"].int(0)
         jobsReady = ui["jobs"]["ready"].int(0)
         repos = ui["repos"].array.compactMap { r in
-            r["slug"].string.map { ($0, r["enabled"].bool(true)) }
+            r["slug"].string.map {
+                WatchedRepo(slug: $0, enabled: r["enabled"].bool(true),
+                            provider: r["provider"].string(""), model: r["model"].string(""))
+            }
         }
         fleet = ui["fleet"].array.compactMap(\.string)
 
@@ -544,6 +568,8 @@ struct Snapshot: Equatable {
         st.notifyFailed = s["notify"]["failed"].bool(true)
         st.notifyBudget = s["notify"]["budget"].bool(true)
         st.notifySound = s["notify"]["sound"].bool(true)
+        st.skipBots = s["skip"]["bots"].bool(true)
+        st.skipDocsOnly = s["skip"]["docsOnly"].bool(false)
         for (k, v) in (s["providers"].object ?? [:]) { st.models[k] = JSON(v)["model"].string("") }
         settings = st
     }

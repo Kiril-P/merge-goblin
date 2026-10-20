@@ -209,7 +209,8 @@ review_print_outcome() {
       echo "nothing has been posted. read it, then:  goblin post $id"
       echo "or throw it away:                        goblin cancel $id" ;;
     done)      echo "posted: $(jq -r '.result.reviewUrl // ""' "$dir/job.json")" ;;
-    skipped)   echo "skipped: $(job_get "$id" reason)  (use --force to review anyway)" ;;
+    skipped)   local why; why="$(job_get "$id" reasonDetail)"; [ -n "$why" ] || why="$(job_get "$id" reason)"
+               echo "skipped: $why  (use --force to review anyway)" ;;
     cancelled) echo "cancelled" ;;
     *)         echo "failed: $(job_get "$id" error) $(job_get "$id" errorDetail)" ;;
   esac
@@ -264,6 +265,15 @@ review_run_job() {
       return 1
     }
   fi
+  # The repo's own provider/model (repos[].provider/.model) applies unless this review
+  # named one. --provider wins outright; --model alone keeps the repo's provider.
+  if [ -z "$provider_ov" ]; then
+    engine_repo_provider "$slug" "$provider"
+    provider="$ENGINE_REPO_PROVIDER"
+    [ -z "$model_ov" ] && model_ov="$ENGINE_REPO_MODEL"
+  elif [ -z "$model_ov" ] && [ "$(cfg_repo_field "$slug" provider '')" = "$provider_ov" ]; then
+    model_ov="$(cfg_repo_field "$slug" model '')"
+  fi
   # Applied to this process only (see cfg_read); never written back.
   GOBLIN_CFG_OVERLAY="$(jq -nc --arg p "$provider" --arg m "$model_ov" \
     '{provider:$p} + (if $m != "" then {providers:{($p):{model:$m}}} else {} end)')"
@@ -294,6 +304,14 @@ review_run_job() {
       if [ "$psha" = "$head" ]; then
         job_phase skipped '{"reason":"already_reviewed"}'; return 0
       fi
+    fi
+    # Noise: a dependency bot's PR, only lockfiles/generated files, or (if enabled) only
+    # docs. Asked for by number it is still the person's call, hence --force.
+    local skipj
+    if skipj="$(skip_check "$slug" "$number" "$(jq -r '.author // ""' "$meta")" "$GOBLIN_JOB_DIR/skip-files.json")"; then
+      log "job $id: skipped — $(printf '%s' "$skipj" | jq -r '.detail')"
+      job_phase skipped "$(printf '%s' "$skipj" | jq -c '{reason, reasonDetail: .detail}')"
+      return 0
     fi
   fi
   local last_sha=""

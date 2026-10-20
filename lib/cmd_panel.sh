@@ -138,6 +138,9 @@ _panel_set() {
         fleet-assignment|fleetAssignment)         cfg_set ".fleetAssignment = $fval" ;;
         skip-if-human-reviewed|skipIfHumanReviewed) cfg_set ".skipIfHumanReviewed = $fval" ;;
         refute-pass|refutePass)                   cfg_set ".refutePass = $fval" ;;
+        # The global skip rules. Per-repo overrides and the path globs are config-only.
+        skip-bots|skipBots)                       cfg_set ".skip.bots = $fval" ;;
+        skip-docs-only|skipDocsOnly)              cfg_set ".skip.docsOnly = $fval" ;;
         notify-started|notifyStarted) cfg_set ".notify.started = $fval" ;;
         notify-posted|notifyPosted)   cfg_set ".notify.posted  = $fval" ;;
         notify-failed|notifyFailed)   cfg_set ".notify.failed  = $fval" ;;
@@ -163,6 +166,16 @@ _panel_set() {
         *..*|/*) echo "prompt path must be relative and must not contain .." >&2; return 2 ;;
       esac
       cfg_repo_set_field "$s" promptPath "$v2" ;;
+
+    repo-provider)
+      # <slug> <claude|codex|cursor|default> [model] — every part validated here and
+      # again in cfg_repo_set_provider; "default" hands the repo back to the global one.
+      local rs rp rmodel
+      rs="$(_panel_slug "$v")" || { echo "invalid repo slug" >&2; return 2; }
+      case "$v2" in default|"") rp=default ;; *) rp="$(_panel_provider "$v2")" || { echo "unknown provider" >&2; return 2; } ;; esac
+      rmodel="$(_panel_model "${3:-}")" || { echo "invalid model name" >&2; return 2; }
+      [ "$rp" = default ] && rmodel=""
+      cfg_repo_set_provider "$rs" "$rp" "$rmodel" || { echo "not a watched repo, or a value was refused" >&2; return 2; } ;;
 
     setup-complete)
       # Only ever set true from here. Turning setup "off" is not a thing the UI

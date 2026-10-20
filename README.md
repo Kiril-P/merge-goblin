@@ -153,6 +153,8 @@ goblin budget 5                # stop after $5/day
 goblin provider list           # which subscriptions are ready
 goblin provider use codex      # switch who does the reviewing
 goblin repos add owner/name    # watch another repo
+goblin repo provider owner/name codex gpt-5   # this repo is reviewed by codex (model optional)
+goblin repo provider owner/name default       # back to the global provider
 
 goblin update                  # is there a newer Goblin? (tells you; installs nothing)
 ```
@@ -208,15 +210,27 @@ of `origin/<base>` as git blobs (symlinks ignored) and builds the prompt from th
 
 ## How he checks his work
 
-- **He reads the code, not just the diff.** The model gets a read-only checkout of the PR
-  (Read, Grep and Glob, confined to that directory — no shell, no network, no writes) so it can
-  confirm a claim against the callers and tests before making it. It runs from an empty
-  directory with only your own settings, so a PR can't smuggle in hooks or MCP servers.
+- **He reads the code, not just the diff.** The model gets a read-only checkout of the PR so
+  it can confirm a claim against the callers and tests before making it. With Claude that is
+  Read, Grep and Glob, confined to that directory — no shell, no network, no writes. Codex
+  reads by running shell commands in its own sandbox; see
+  [What codex can read](#what-codex-can-read) for exactly how far that is confined. Either
+  way it runs from an empty directory with only your own settings, so a PR can't smuggle in
+  hooks, MCP servers or an `AGENTS.md` of instructions.
 - **Blockers are graded by consequence.** A blocker is something that would cause harm that
   doesn't fix itself, with a trigger he can name. A missing test, missing docs, style or an
   unmeasured performance worry is never one.
 - **He reads what people already said.** Comments and reviews from others on the PR go into the
   prompt, so he doesn't repeat them.
+- **"Won't fix" means won't fix.** When he re-reviews a PR he reads the replies under his own
+  earlier findings. If someone other than him (bots don't count) replies with something like
+  *intentional*, *by design*, *won't fix*, *wontfix*, *not a bug*, *false positive*,
+  *not an issue* or *working as intended*, or resolves the thread, that finding is marked
+  **declined**. A declined finding goes into the prompt's "already posted" list as *declined
+  by the author, do not raise again*, and he gets no "no longer flagged" reply. This is a
+  keyword heuristic and nothing more. A reply that also agrees ("good catch, will fix",
+  "you're right", "not intentional") doesn't count as a decline. He never replies to
+  the discussion himself. The patterns live in `share/jq/prior-findings.jq`.
 - **A second look before posting.** For reviews that post without a person reading them first
   (the scheduler, `--post`), a skeptical second pass tries to disprove each finding against the
   source, by default with the same provider that wrote the review (set `refute.provider` to
@@ -263,6 +277,8 @@ are counted) and sorts each into **likely addressed** (resolved, or GitHub marke
 outdated because the code under it changed), **discussed** (still open, someone replied)
 or **silent**. `--json`, `--days N` (default 30) and `--refresh` are available; the
 answer is cached for six hours. The popover's Recent tab and Settings → About show it too.
+`goblin stats --by severity` or `--by repo` breaks the same numbers into one row per
+severity or per repo (works with `--json` too).
 
 "Outdated" can also come from an unrelated edit, and a silent finding isn't necessarily
 wrong, so treat it as a trend line: if the rate drops after you change the prompt or the
@@ -287,6 +303,83 @@ the review body and aren't counted.
 | `gitTimeoutSecs` | `120` | cap on every clone / fetch the engine runs |
 | `fleet` | `[]` | teammates also running the Goblin |
 | `intervalSeconds` | `300` | re-run `install.sh` after changing |
+| `skip.bots` | `true` | skip PRs opened by a dependency bot (Settings → Behaviour) |
+| `skip.botLogins` | dependabot, renovate, snyk-bot, … | the logins that count as bots (`[bot]` / `app/` stripped) |
+| `skip.docsOnly` | `false` | skip PRs that only touch docs (Settings → Behaviour) |
+| `skip.docsPaths` | `*.md`, `*.mdx`, `*.markdown`, `*.rst`, `docs/**` | what counts as docs |
+| `skip.paths` | lockfiles, `*.min.js`, maps, snapshots, generated code, `dist/`, `vendor/` | skip a PR when **every** file matches |
+| `repos[].provider` / `.model` | unset | who reviews this one repo (`goblin repo provider`, or the Repos pane) |
+| `repos[].skip` | unset | a partial `skip` object that overrides the global one for this repo |
+
+### What he leaves alone
+
+Before any model runs, a PR is checked against the `skip` rules:
+
+- **Dependency bots.** The author is one of `skip.botLogins`. Set `skip.bots` to `false` to
+  review them anyway.
+- **Noise only.** Every changed file matches `skip.paths`. Globs: `*` stays inside one
+  directory, `**` crosses directories, and a pattern without a `/` matches the file name in
+  any directory. A PR that touches a lockfile and real code is still reviewed.
+- **Docs only** (off by default). Every file is docs (`skip.docsPaths`) or noise, and at least one
+  is docs.
+
+The scheduler skips quietly. You see `skipped: …` with the reason in the log and the
+history, and the PR isn't picked up again at the same commit. A manual review comes back as a
+**skipped** job that says why. Pass `--force` to review the PR anyway. If the file list
+can't be fetched, the PR is reviewed rather than skipped.
+
+The two toggles are in Settings → Behaviour. Paths, bot logins and per-repo overrides are
+config-only. For example, to review Renovate PRs and skip docs-only PRs in one repo:
+
+```json
+"repos": [
+  { "slug": "acme/api", "enabled": true,
+    "provider": "codex", "model": "gpt-5",
+    "skip": { "bots": false, "docsOnly": true, "paths": ["*.lock", "openapi/generated/**"] } }
+]
+```
+
+A per-repo object is merged key by key over the global one, and arrays such as `paths`
+replace the global list. A repo's `provider`/`model` applies to scheduled and manual
+reviews alike. `goblin review --provider/--model` still wins for that one review. If the
+repo's provider isn't ready, he falls back to the global one and logs it.
+
+### What codex can read
+
+Codex reads code by running shell commands in its own macOS sandbox. `--sandbox read-only`
+alone blocks writes and network, **but those commands can still read the whole disk**. In
+testing, `ls ~/.ssh` and a file under `$HOME` both came straight back. So when the installed
+codex supports permission profiles, the Goblin passes one for each review
+(`default_permissions="goblin"`).
+
+**Confined:** commands the model runs can read the PR checkout and nothing else of yours.
+That excludes `$HOME`, `~/.ssh`, `~/.goblin`, the other clones, `/tmp` and `$TMPDIR`. They
+can't write anywhere and have no network. They start in an empty directory, and the PR's
+`AGENTS.md` isn't loaded (`project_doc_max_bytes=0`).
+
+**Not confined:**
+
+- System files that codex's `:minimal` set keeps readable so a shell can start (`/bin`,
+  `/usr`, `/System`, `/etc`, …). None of them hold your data.
+- Environment variables the shell inherits. The Goblin removes `GH_TOKEN`, `GITHUB_TOKEN`
+  and `GH_ENTERPRISE_TOKEN` first. Any other secret in the Goblin's environment is visible
+  to those commands.
+- The codex process itself, which reads its own login in `~/.codex` and talks to OpenAI.
+  Only the commands the model runs are sandboxed.
+
+**Verified** with codex-cli 0.163.0-alpha.10.2:
+
+- Under the profile, `codex sandbox` read a file in the checkout (also when the checkout sat
+  under `$HOME` or `/tmp`).
+- It was refused a file in a sibling directory under `$HOME`, `~/.ssh`, a file in `/tmp` and
+  one in `$TMPDIR`, a write, and `curl` to a public host.
+- A real `codex exec` review under the same flags got the same results: the model read the
+  checkout and was refused everything else on the list.
+
+Before each review the Goblin checks this again: it asks the sandbox to read one file inside
+a scratch grant and one outside it. If that check fails (for example, an older codex without
+profiles), the review falls back to `--sandbox read-only` and the log says reads are
+**NOT confined**. Update codex to fix it.
 
 ## How it works
 
@@ -301,8 +394,8 @@ launchd ──▶ goblin run ──▶ pick PRs ──▶ assign ──▶ claim
                                           one grouped review + intent comment
 ```
 
-The model never touches GitHub — it runs read-only with no tools and returns JSON. The
-Goblin does the posting. That's what makes providers swappable and the verdict safe.
+The model never touches GitHub. It can read the checkout (nothing writable, no network; see
+[What codex can read](#what-codex-can-read)) and returns JSON. The Goblin does the posting. That's what makes providers swappable and the verdict safe.
 
 State lives in `~/.goblin/`: `config.json`, `events.jsonl` (history and spend), `ledger`
 (what's been reviewed), `repos/` (scratch clones), `goblin.log`.

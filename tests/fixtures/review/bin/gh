@@ -5,6 +5,9 @@
 #   REVIEW_FAKE_STATE  open|closed (default open)
 #   REVIEW_FAKE_HEAD   head sha (default aaaaaaa1111111)
 #   REVIEW_FAKE_PRIOR  if set, GET reviews returns a Goblin review at that sha
+#   REVIEW_FAKE_AUTHOR the PR author's login (default alice)
+#   REVIEW_FAKE_FILES  a file served as the PR's changed files (default: one src/a.js)
+#   REVIEW_FAKE_COMMENTS a file served as the PR's review comments (default [])
 [ -n "${REVIEW_FAKE_LOG:-}" ] && printf '%s\n' "$*" >> "$REVIEW_FAKE_LOG"
 
 head="${REVIEW_FAKE_HEAD:-aaaaaaa1111111}"
@@ -45,6 +48,7 @@ case "$path" in
   # could not be read, which is what the failure paths in `goblin stats` need.
   graphql) [ -n "${REVIEW_FAKE_THREADS:-}" ] && [ -f "$REVIEW_FAKE_THREADS" ] && cat "$REVIEW_FAKE_THREADS" || exit 1 ;;
   repos/*/pulls/*/files)
+    if [ -n "${REVIEW_FAKE_FILES:-}" ]; then emit < "$REVIEW_FAKE_FILES"; exit 0; fi
     cat <<JSON | emit
 [{"filename":"src/a.js","status":"modified","additions":2,"deletions":1,
   "patch":"@@ -1,3 +1,4 @@\n line one\n-old\n+new\n+added\n line three"}]
@@ -55,11 +59,14 @@ JSON
       jq -nc --arg s "$REVIEW_FAKE_PRIOR" '[{submitted_at:"2026-01-01T00:00:00Z", commit_id:$s, user:{login:"me",type:"User"},
         state:"COMMENTED", body:("<!-- goblin:review {\"v\":1,\"headSha\":\"" + $s + "\"} -->")}]' | emit
     else echo '[]' | emit; fi ;;
-  repos/*/pulls/*/comments|repos/*/issues/*/comments) echo '[]' | emit ;;
+  repos/*/pulls/*/comments)
+    if [ -n "${REVIEW_FAKE_COMMENTS:-}" ]; then emit < "$REVIEW_FAKE_COMMENTS"; else echo '[]' | emit; fi ;;
+  repos/*/issues/*/comments) echo '[]' | emit ;;
   repos/*/pulls/*)
     num="${path##*/}"
-    jq -nc --argjson n "$num" --arg h "$head" --arg st "$state" '{number:$n, title:"Add the widget", body:"Adds a widget.",
+    jq -nc --argjson n "$num" --arg h "$head" --arg st "$state" --arg a "${REVIEW_FAKE_AUTHOR:-alice}" \
+      '{number:$n, title:"Add the widget", body:"Adds a widget.",
       state:$st, merged:false, draft:false, html_url:("https://github.com/acme/widgets/pull/" + ($n|tostring)),
-      user:{login:"alice"}, base:{ref:"main"}, head:{sha:$h}}' | emit ;;
+      user:{login:$a}, base:{ref:"main"}, head:{sha:$h}}' | emit ;;
   *) exit 0 ;;
 esac

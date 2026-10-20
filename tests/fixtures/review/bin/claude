@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # Fake `claude` that returns one anchored finding, so the preview/post path has
 # something to edit. CLAUDE_FAKE_SLOW=<secs> makes it hang, for the cancel test.
+# CLAUDE_FAKE_PROMPT_OUT=<file> keeps the prompt it was given; CLAUDE_FAKE_ARGS_OUT its argv.
 case "${1:-}" in
   --version) echo "0.0.0-fake" ;;
   auth) echo '{"loggedIn":true,"authMethod":"fake","subscriptionType":"test"}' ;;
   -p)
-    cat >/dev/null
+    if [ -n "${CLAUDE_FAKE_PROMPT_OUT:-}" ]; then cat > "$CLAUDE_FAKE_PROMPT_OUT"; else cat >/dev/null; fi
+    [ -n "${CLAUDE_FAKE_ARGS_OUT:-}" ] && printf '%s\n' "$@" > "$CLAUDE_FAKE_ARGS_OUT"
     [ -n "${CLAUDE_FAKE_SLOW:-}" ] && sleep "$CLAUDE_FAKE_SLOW"
     cat <<'JSON'
 {"type":"result","is_error":false,"num_turns":1,"total_cost_usd":0.25,

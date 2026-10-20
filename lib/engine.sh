@@ -2,7 +2,8 @@
 # engine.sh — poll → gate → claim → review → post → release.
 #
 # Gate order is cheapest-first on purpose: most cycles do no network work at all.
-#   draft → local ledger → fleet assignment → GitHub idempotency → atomic claim
+#   draft → local ledger → fleet assignment → GitHub idempotency → human reviewed
+#   → noise (skip rules) → budget → still open → atomic claim
 
 # shellcheck source=providers.sh
 . "$LIB_DIR/providers.sh"
@@ -18,6 +19,7 @@
 . "$LIB_DIR/attempts.sh"
 . "$LIB_DIR/inbox.sh"
 . "$LIB_DIR/jobs.sh"
+. "$LIB_DIR/skip.sh"
 
 ONLY_PR=""; ONLY_REPO=""; DRY_RUN=false; FORCE=false; SCHEDULED=false
 # PREVIEW: run the whole review but stop before posting — the result is saved for a
@@ -91,8 +93,20 @@ cmd_run() {
     return 0
   fi
 
+  local had_overlay="${GOBLIN_CFG_OVERLAY+set}" saved_overlay="${GOBLIN_CFG_OVERLAY:-}"
   for slug in $repos; do
-    engine_repo "$slug" "$provider"
+    # A repo may name its own provider and model (repos[].provider/.model). Applied as a
+    # per-process overlay for this repo only and taken off again before the next one.
+    engine_repo_provider "$slug" "$provider"
+    if [ "$ENGINE_REPO_PROVIDER" != "$provider" ] || [ -n "$ENGINE_REPO_MODEL" ]; then
+      GOBLIN_CFG_OVERLAY="$(jq -nc --arg p "$ENGINE_REPO_PROVIDER" --arg m "$ENGINE_REPO_MODEL" \
+        '{provider:$p} + (if $m != "" then {providers:{($p):{model:$m}}} else {} end)')"
+      export GOBLIN_CFG_OVERLAY
+      log "$slug: reviewed with $ENGINE_REPO_PROVIDER${ENGINE_REPO_MODEL:+/$ENGINE_REPO_MODEL} (repo setting)"
+    fi
+    engine_repo "$slug" "$ENGINE_REPO_PROVIDER"
+    if [ "$had_overlay" = set ]; then GOBLIN_CFG_OVERLAY="$saved_overlay"; export GOBLIN_CFG_OVERLAY
+    else unset GOBLIN_CFG_OVERLAY; fi
   done
 
   # After the reviews, never before: a version check is the least important thing
@@ -174,6 +188,40 @@ engine_budget_ok() {
     fi
     status_set '{"state":"paused","pausedReason":"budget","activity":""}'
     return 1
+  fi
+  return 0
+}
+
+# engine_repo_provider <slug> <default-provider>
+#   sets ENGINE_REPO_PROVIDER (the provider that reviews this repo) and ENGINE_REPO_MODEL
+#   (its model for this repo, or empty for that provider's configured model).
+#
+# repos[].provider wins when it is installed and signed in; otherwise the default is
+# used and the log says why, because a repo that silently stopped being reviewed by the
+# provider somebody chose for it is worse than one reviewed by the usual one. The model
+# is only ever used together with the provider it was chosen for. Never fails.
+engine_repo_provider() {
+  local slug="$1" def="$2" want model probe
+  ENGINE_REPO_PROVIDER="$def"; ENGINE_REPO_MODEL=""
+  want="$(cfg_repo_field "$slug" provider '')"
+  model="$(cfg_repo_field "$slug" model '')"
+  case "$want" in
+    "") return 0 ;;
+    claude|codex|cursor) ;;
+    *) log "  $slug: unknown provider '$(trunc "$want" 20)' in its repo settings — using $def"; return 0 ;;
+  esac
+  if [ "$want" != "$def" ]; then
+    command -v "provider_${want}_probe" >/dev/null 2>&1 || providers_load
+    probe="$("provider_${want}_probe" 2>/dev/null)"
+    if [ "$(printf '%s' "$probe" | jq -r '.available and .authed' 2>/dev/null)" != "true" ]; then
+      log "  $slug: its provider $want is not installed or signed in — using $def"
+      return 0
+    fi
+  fi
+  ENGINE_REPO_PROVIDER="$want"
+  if [ -n "$model" ]; then
+    if printf '%s' "$model" | grep -qE '^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$'; then ENGINE_REPO_MODEL="$model"
+    else log "  $slug: ignoring an invalid model name in its repo settings"; fi
   fi
   return 0
 }
@@ -311,6 +359,25 @@ engine_pr() {
     rm -f "$rj" 2>/dev/null
   fi
 
+  # --- gate: is it noise? (free for bot PRs; one call when a file rule is on) ---
+  # Lockfile bumps, dependency-bot PRs and (optionally) docs-only changes are skipped
+  # before the budget is touched and before anything is claimed (lib/skip.sh).
+  if [ "$FORCE" != true ]; then
+    local author skipj sf="$RUNTMP/skipfiles-$pr-$$.json"
+    author="$(printf '%s' "$entry" | jq -r '.author // ""')"
+    if skipj="$(skip_check "$slug" "$pr" "$author" "$sf")"; then
+      rm -f "$sf" 2>/dev/null
+      local detail; detail="$(printf '%s' "$skipj" | jq -r '.detail')"
+      log "  #$pr: skipped — $detail"
+      if [ "$DRY_RUN" != true ]; then
+        ledger_add "$key"
+        events_append skipped "$pr" "$title" "$url" 0 "skipped: $detail" "$slug" "" ""
+      fi
+      return 0
+    fi
+    rm -f "$sf" 2>/dev/null
+  fi
+
   engine_budget_ok || return 1
 
   # --- gate: is it still open? (1 call, saves a whole model run) ---
@@ -395,10 +462,23 @@ engine_review_pr_locked() {
   gh_ticket_context "$slug" "$pr" "$work/pr.json" "$work/ticket.txt" >/dev/null
   : > "$work/prior.txt"
   local prior_json="$work/prior.json"; echo '[]' > "$prior_json"
-  if [ -n "$last_sha" ] && [ "$(cfg_get '.incrementalReview' true)" = "true" ]; then
-    gh_prior_findings "$slug" "$pr" > "$prior_json" 2>/dev/null || echo '[]' > "$prior_json"
-    jq -r 'def one: tostring | gsub("[\\n\\r]+";" ") | .[0:200]; .[] | "- \(.severity // "?" | one): \(.path // "?" | one):\(.line // "?" | one)"' "$prior_json" > "$work/prior.txt" 2>/dev/null
-    log "  #$pr: incremental (last reviewed $(trunc "$last_sha" 7), $(jq 'length' "$prior_json") prior finding(s))"
+  if [ -n "$last_sha" ]; then
+    # Read once, used twice: incremental review drops everything already posted, and
+    # findings the author DECLINED (replied "intentional", "won't fix", … or resolved
+    # the thread) are dropped even when incremental review is off — being told the same
+    # thing again after saying no is the noise this tool exists to avoid.
+    local prior_all="$work/prior-all.json"
+    if ! gh_prior_findings "$slug" "$pr" > "$prior_all" 2>/dev/null \
+       || ! jq -e 'type == "array"' "$prior_all" >/dev/null 2>&1; then
+      echo '[]' > "$prior_all"
+    fi
+    if [ "$(cfg_get '.incrementalReview' true)" = "true" ]; then
+      cp "$prior_all" "$prior_json"
+    else
+      jq '[.[] | select(.declined == true)]' "$prior_all" > "$prior_json" 2>/dev/null || echo '[]' > "$prior_json"
+    fi
+    prompt_prior_lines "$prior_json" > "$work/prior.txt"
+    log "  #$pr: last reviewed $(trunc "$last_sha" 7) — $(jq 'length' "$prior_json") prior finding(s), $(jq '[.[] | select(.declined == true)] | length' "$prior_json") declined"
   fi
 
   : > "$work/others.txt"

@@ -84,8 +84,10 @@ gh_marker_authors() {
 # Matches the pre-rename prefix too, else a rename would make the Goblin forget
 # every review it had already posted and duplicate all of them.
 gh_prior_review() {
-  local who; who="$(gh_marker_authors)"; [ -n "$who" ] || who='[]'
-  gh api --paginate "repos/$1/pulls/$2/reviews?per_page=100" --jq '
+  local who all; who="$(gh_marker_authors)"; [ -n "$who" ] || who='[]'
+  # One answer for the whole PR, not one per page of reviews (see gh_api_all).
+  all="$(gh_api_all "repos/$1/pulls/$2/reviews?per_page=100")" || return 0
+  printf '%s' "$all" | jq -c '
     '"$who"' as $who
     | [ .[]
       | select(.body != null and ((.user.login // "") as $u | $who | index($u)))
@@ -103,7 +105,7 @@ gh_prior_review() {
 # fast on a repo with twenty open PRs. Fails if the response is not an array, so a
 # rate-limit error object can never be read as "no reviews".
 gh_reviews_fetch() {
-  gh api --paginate "repos/$1/pulls/$2/reviews?per_page=100" > "$3" 2>/dev/null || return 1
+  gh_api_all "repos/$1/pulls/$2/reviews?per_page=100" > "$3" || return 1
   jq -e 'type == "array"' "$3" >/dev/null 2>&1 || return 1
 }
 
@@ -132,27 +134,51 @@ gh_human_reviewers() {
     | unique | .[]' "$1" 2>/dev/null
 }
 
-# gh_prior_findings <slug> <pr> — ids/titles already posted inline, for dedupe.
-# `.line` can be null on outdated comments (only the deprecated `position`
-# survives), so fall back to original_line.
+# gh_prior_findings <slug> <pr> — the findings already posted inline, for dedupe, each
+# with `declined` saying whether the PR's people pushed back on it.
+#
+# Output: [{id, severity, …marker fields, commentId, path, line, title,
+#           declined, declinedBy, declinedHow}]
+#
+# `.line` can be null on outdated comments (only the deprecated `position` survives),
+# so it falls back to original_line. The decline heuristic lives in
+# share/jq/prior-findings.jq. Resolved threads come from GraphQL (REST does not say),
+# and that call is only made when there is at least one finding of ours to ask about;
+# if it fails, replies alone decide.
 gh_prior_findings() {
-  local who; who="$(gh_marker_authors)"; [ -n "$who" ] || who='[]'
-  gh api --paginate "repos/$1/pulls/$2/comments?per_page=100" --jq '
-    '"$who"' as $who
-    | [ .[]
-      | . as $c
-      | select(.body != null and ((.user.login // "") as $u | $who | index($u)))
-      | (.body | capture("<!-- (?<ns>'"$GOBLIN_MARKER_NS"'|'"$GOBLIN_MARKER_NS_LEGACY"'):finding (?<j>\\{.*?\\}) -->") // empty) as $mk
-      | (try ($mk.j | fromjson) catch empty) as $pf
-      | select(($pf | type) == "object")
-      | $pf
-        + { commentId: $c.id, path: $c.path, line: ($c.line // $c.original_line) } ]' 2>/dev/null
+  local slug="$1" pr="$2" who all resolved='[]'
+  who="$(gh_marker_authors)"; [ -n "$who" ] || who='[]'
+  all="$(gh_api_all "repos/$slug/pulls/$pr/comments?per_page=100")" || return 1
+  if printf '%s' "$all" | jq -e --arg a "<!-- $GOBLIN_MARKER_NS:finding " --arg b "<!-- $GOBLIN_MARKER_NS_LEGACY:finding " \
+       'any(.[]; (.body // "") | (contains($a) or contains($b)))' >/dev/null 2>&1; then
+    resolved="$(gh_resolved_thread_roots "$slug" "$pr")" || resolved='[]'
+    [ -n "$resolved" ] || resolved='[]'
+  fi
+  printf '%s' "$all" | jq -c --argjson who "$who" --arg ns "$GOBLIN_MARKER_NS" \
+    --arg legacy "$GOBLIN_MARKER_NS_LEGACY" --argjson resolved "$resolved" \
+    -f "$SHARE_DIR/jq/prior-findings.jq" 2>/dev/null
+}
+
+# gh_resolved_thread_roots <slug> <pr> -> JSON array of the REST ids of the FIRST comment
+# of every resolved review thread. Paginated (threads come 100 at a time).
+GH_RESOLVED_QUERY='query($owner:String!,$name:String!,$number:Int!,$endCursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100,after:$endCursor){pageInfo{hasNextPage endCursor} nodes{isResolved comments(first:1){nodes{databaseId}}}}}}}'
+gh_resolved_thread_roots() {
+  local raw
+  raw="$(gh api graphql --paginate -f query="$GH_RESOLVED_QUERY" \
+          -f owner="${1%%/*}" -f name="${1#*/}" -F number="$2" 2>/dev/null)" || return 1
+  [ -n "$raw" ] || return 1
+  printf '%s' "$raw" | jq -cs '
+    if all(.[]; (.data.repository.pullRequest.reviewThreads.nodes | type) == "array")
+    then [ .[] | .data.repository.pullRequest.reviewThreads.nodes[]
+           | select(.isResolved == true) | (.comments.nodes[0].databaseId // empty) ]
+    else error("bad page") end' 2>/dev/null
 }
 
 # gh_find_comment <slug> <pr> <marker-type> — id of an existing comment, for upsert.
 gh_find_comment() {
-  gh api --paginate "repos/$1/issues/$2/comments?per_page=100" --jq \
-    "[.[] | select(.body != null and ((.body | contains(\"$GOBLIN_MARKER_NS:$3\")) or (.body | contains(\"$GOBLIN_MARKER_NS_LEGACY:$3\")))) | .id] | first // empty" 2>/dev/null
+  gh_api_all "repos/$1/issues/$2/comments?per_page=100" \
+  | jq -r --arg a "$GOBLIN_MARKER_NS:$3" --arg b "$GOBLIN_MARKER_NS_LEGACY:$3" \
+      '[.[] | select(.body != null and ((.body | contains($a)) or (.body | contains($b)))) | .id] | first // empty' 2>/dev/null
 }
 
 # gh_ticket_context <slug> <pr> <pr.json> <out>
@@ -180,8 +206,8 @@ gh_ticket_context() {
   fi
 
   local linkback
-  linkback="$(gh api --paginate "repos/$slug/issues/$pr/comments?per_page=100" \
-    --jq '[.[] | select(.body != null and (.user.type == "Bot") and ((.user.login // "") | test("linear"; "i"))
+  linkback="$(gh_api_all "repos/$slug/issues/$pr/comments?per_page=100" \
+    | jq -r '[.[] | select(.body != null and (.user.type == "Bot") and ((.user.login // "") | test("linear"; "i"))
                         and (.body | test("linear-linkback|linear\\.app")))
            | .body] | first // empty' 2>/dev/null)"
 
@@ -210,6 +236,8 @@ gh_status() {
 # request: inline review comments and review summaries, without our own markers and
 # without ours at all. Fed to the model as "already raised", so it does not repeat what
 # a human or another bot already said. Failures yield nothing: this is only context.
+# Pagination-safe as it stands: --jq emits one object PER COMMENT (never a per-page
+# aggregate) and the closing `jq -s` collects them across every page.
 gh_other_comments() {
   local slug="$1" pr="$2" me="${GOBLIN_LOGIN:-}"
   {

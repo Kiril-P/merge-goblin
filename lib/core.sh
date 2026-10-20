@@ -154,3 +154,22 @@ lc() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
 
 # Truncate a string to N chars.
 trunc() { printf '%s' "$1" | cut -c "1-$2"; }
+
+# gh_api_all <path> — every page of a GitHub list endpoint, as ONE JSON array.
+#
+# `gh api --paginate ... --jq EXPR` runs EXPR once PER PAGE. Any filter that reduces the
+# list (`[...] | first`, `| min`, `| last`, `[...]`) therefore printed one answer per page
+# on a PR with more than 100 comments: two arrays where one was expected, or a `null`
+# from page one followed by the real id from page two. Nothing failed loudly; the
+# answers were just wrong. So pages are fetched raw, merged here, and every reducing
+# filter runs once over the whole list. `jq -s` accepts both the back-to-back pages gh
+# prints and a single array.
+#
+# Fails (non-zero, nothing on stdout) when gh fails or any page is not an array — a
+# rate-limit error object must never be read as "an empty list".
+gh_api_all() {
+  local raw
+  raw="$(gh api --paginate "$1" 2>/dev/null)" || return 1
+  [ -n "$raw" ] || return 1
+  printf '%s' "$raw" | jq -cs 'if length > 0 and all(.[]; type == "array") then add else error("not a list") end' 2>/dev/null
+}

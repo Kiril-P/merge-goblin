@@ -735,7 +735,9 @@ review_env() {
   export GOBLIN_APP="$ROOT"
   export GOBLIN_PATH_FIRST="$ROOT/tests/fixtures/review/bin:$ROOT/tests/fixtures/bin"
   export REVIEW_FAKE_LOG="$GOBLIN_HOME/gh.log" REVIEW_FAKE_POSTED="$GOBLIN_HOME/posted.json"
-  unset REVIEW_FAKE_STATE REVIEW_FAKE_HEAD REVIEW_FAKE_PRIOR CLAUDE_FAKE_SLOW
+  unset REVIEW_FAKE_STATE REVIEW_FAKE_HEAD REVIEW_FAKE_PRIOR CLAUDE_FAKE_SLOW \
+        REVIEW_FAKE_AUTHOR REVIEW_FAKE_FILES REVIEW_FAKE_COMMENTS REVIEW_FAKE_THREADS \
+        CLAUDE_FAKE_PROMPT_OUT CLAUDE_FAKE_ARGS_OUT
   : > "$REVIEW_FAKE_LOG"
   mkdir -p "$GOBLIN_HOME/repos"; git init -q "$GOBLIN_HOME/repos/acme_widgets"
   cat > "$GOBLIN_HOME/config.json" <<JSON
@@ -1085,19 +1087,30 @@ test_normalize_keeps_a_valid_assessment_only() {
 # --------------------------------------------- audit fixes (engine) ---
 # A fake `gh` for these: `gh api ... --jq EXPR` runs EXPR over $GH_FIXTURE; `--include`
 # calls print $GH_HEADERS; every call's argv is appended to $GH_LOG.
+#   GH_PAGES     space-separated files, printed back to back the way `--paginate` prints
+#                pages (and, with --jq, EXPR runs once PER PAGE — exactly like real gh)
+#   GH_FIXTURE   a single page (the old behaviour)
+#   GH_GRAPHQL   what `gh api graphql …` prints; unset = the call fails
 mk_fake_gh() {
   mkdir -p "$GOBLIN_HOME/fakebin"
   cat > "$GOBLIN_HOME/fakebin/gh" <<'S'
 #!/bin/bash
 echo "$*" >> "${GH_LOG:-/dev/null}"
-expr=""; inc=0; prev=""
+expr=""; inc=0; prev=""; gql=0
 for a in "$@"; do
   [ "$prev" = "--jq" ] && expr="$a"
   [ "$a" = "--include" ] && inc=1
+  [ "$a" = "graphql" ] && gql=1
   prev="$a"
 done
 if [ "$inc" = 1 ]; then printf '%b' "${GH_HEADERS:-HTTP/2.0 500 x\r\n}"; exit 0; fi
-if [ -n "$expr" ] && [ -n "${GH_FIXTURE:-}" ]; then jq -c "$expr" "$GH_FIXTURE"; exit 0; fi
+if [ "$gql" = 1 ]; then [ -n "${GH_GRAPHQL:-}" ] && cat $GH_GRAPHQL && exit 0; exit 1; fi
+case " $* " in *" -X POST "*) [ -n "${GH_POST_ID:-}" ] && echo "$GH_POST_ID"; exit 0 ;; *" -X DELETE "*) exit 0 ;; esac
+pages="${GH_PAGES:-${GH_FIXTURE:-}}"
+[ -n "$pages" ] || exit 0
+for p in $pages; do
+  if [ -n "$expr" ]; then jq -c "$expr" "$p"; else cat "$p"; fi
+done
 exit 0
 S
   chmod +x "$GOBLIN_HOME/fakebin/gh"
@@ -1901,6 +1914,9 @@ test_panel_contract_matches_the_app() {
       provider-model)  cmd_panel set "$k" claude sonnet >/dev/null 2>&1 || bad="$bad $k" ;;
       allow-approve)   cmd_panel set "$k" false     >/dev/null 2>&1 || bad="$bad $k" ;;
       interval-minutes) cmd_panel set "$k" 15       >/dev/null 2>&1 || bad="$bad $k" ;;
+      repo-provider)   cfg_repo_add o/n >/dev/null 2>&1
+                       cmd_panel set "$k" o/n codex gpt-5 >/dev/null 2>&1 || bad="$bad $k"
+                       cmd_panel set "$k" o/n default ""  >/dev/null 2>&1 || bad="$bad $k:default" ;;
       *)               cmd_panel set "$k" 5         >/dev/null 2>&1 || bad="$bad $k" ;;
     esac
   done
@@ -2099,6 +2115,27 @@ t "stats: window, cache, failures"         test_stats_window_cache_and_failures
 t "fleet: status reads what each goblin left" test_fleet_status_reads_what_each_goblin_left
 t "fleet: cache, offline, no fleet"        test_fleet_status_cache_offline_and_no_fleet
 t "notify: payload names the job and kind" test_notify_payload_names_the_job_and_kind
+
+. "$ROOT/tests/features_test.sh"
+t "pagination: reviews are one answer"     test_pagination_reviews_are_one_answer
+t "pagination: review comments are one answer" test_pagination_comments_are_one_answer
+t "pagination: issue comments, claim, ticket" test_pagination_issue_comments_are_one_answer
+t "pagination: an error page is not a list" test_pagination_an_error_page_is_not_an_empty_list
+t "pagination: stats reads every thread page" test_stats_reads_every_page_of_threads
+t "stats: --by severity and repo"          test_stats_by_severity_and_repo
+t "declined: the reply heuristic"          test_declined_heuristic
+t "declined: resolved threads via graphql" test_declined_resolved_threads_come_from_graphql
+t "declined: never raised again, prompt says why" test_declined_findings_are_never_raised_again
+t "declined: no 'fixed' reply on a declined thread" test_declined_threads_get_no_fixed_reply
+t "skip: rules decide before the model"    test_skip_rules_decide_before_the_model
+t "skip: manual review says why unless forced" test_skip_manual_review_says_why_unless_forced
+t "skip: scheduled path records the reason" test_skip_scheduled_path_records_the_reason
+t "repo provider: cli is validated"        test_repo_provider_cli_is_validated
+t "repo provider: used unless the review names one" test_repo_provider_is_used_unless_the_review_names_one
+t "repo provider: falls back when unusable" test_repo_provider_falls_back_when_unusable
+t "codex: reads confined to the checkout"  test_codex_reads_are_confined_to_the_checkout
+t "codex: profile quotes paths"            test_codex_profile_quotes_paths
+t "codex: real sandbox confines (if installed)" test_codex_real_sandbox_confines_when_installed
 
 printf '\n  %s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -gt 0 ] && { printf '  failed:%b\n\n' "$FAILED"; exit 1; }

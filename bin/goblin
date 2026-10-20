@@ -68,6 +68,10 @@ $GOBLIN_EMOJI $GOBLIN_NAME v$GOBLIN_VERSION — $GOBLIN_TAGLINE
   goblin snooze 1h|tomorrow|<secs>|clear
   goblin budget [show|off|<usd>]      daily spend cap
   goblin repos [list|add SLUG|rm SLUG|enable SLUG|disable SLUG]
+  goblin repo provider SLUG <claude|codex|cursor|default> [MODEL]
+                                      who reviews this one repo
+  goblin stats [--json] [--days N] [--by severity|repo]
+                                      what became of posted findings
   goblin provider [list|use <id>|which]
   goblin fleet [list|add LOGIN|rm LOGIN]   teammates also running the $GOBLIN_SHORT
   goblin fleet status [--json]        what each teammate's $GOBLIN_SHORT did lately
@@ -111,7 +115,7 @@ case "$cmd" in
   version)  echo "$GOBLIN_NAME $GOBLIN_VERSION" ;;
   help|-h|--help) usage ;;
   # everything else is a small control verb
-  on|off|pause|resume|toggle|toggle-power|snooze|budget|repos|provider|fleet|config|log|agent|fix-account|\
+  on|off|pause|resume|toggle|toggle-power|snooze|budget|repos|repo|provider|fleet|config|log|agent|fix-account|\
   run-now|snooze1h|snoozetomorrow|clearsnooze|budgetoff|budget2|budget5|budget10|set-budget|disable-agent|enable-agent)
             . "$LIB_DIR/cmd_ctl.sh";     cmd_ctl "$cmd" "$@" ;;
   *)        echo "$GOBLIN_SLUG: unknown command '$cmd'" >&2; usage >&2; exit 2 ;;

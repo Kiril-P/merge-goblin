@@ -128,16 +128,26 @@ post_intent() {
 post_fixed_replies() {
   local slug="$1" pr="$2" prior="$3" curids="$4" head="$5"
   local gone i n cid
+  # A declined finding is "gone" because it was dropped on purpose, not because it was
+  # fixed: telling the author it is "no longer flagged" on a thread where they just said
+  # "won't fix" would be both wrong and noise.
+  #
+  # `.id as $i` is load-bearing: `$cur[0] | index(.id)` evaluates `.id` against the ids
+  # ARRAY, which is a jq error — so this used to select nothing, silently, and no
+  # "no longer flagged" reply was ever posted.
   gone="$(jq -c --slurpfile cur "$curids" \
-    '[ .[] | select(.id != null) | select(($cur[0] | index(.id)) == null) ] | .[0:10]' \
+    '[ .[] | select(.id != null and .declined != true) | select(.id as $i | ($cur[0] | index($i)) == null) ] | .[0:10]' \
     "$prior" 2>/dev/null)"
   n="$(printf '%s' "$gone" | jq 'length' 2>/dev/null || echo 0)"
   i=0
   while [ "$i" -lt "${n:-0}" ]; do
     cid="$(printf '%s' "$gone" | jq -r --argjson i "$i" '.[$i].commentId')"
     if [ -n "$cid" ] && [ "$cid" != "null" ]; then
+      # The marker says "this reply is the Goblin's": it posts under the user's login, so
+      # without one, stats and the decline heuristic would read it as a person replying.
       gh api -X POST "repos/$slug/pulls/$pr/comments/$cid/replies" \
-        -f body="✅ no longer flagged as of \`$(trunc "$head" 7)\` — $GOBLIN_NAME" \
+        -f body="$(render_marker fixed "$(jq -nc --arg h "$head" '{v:1,headSha:$h}')")
+✅ no longer flagged as of \`$(trunc "$head" 7)\` — $GOBLIN_NAME" \
         --silent >/dev/null 2>&1 || true
     fi
     i=$((i + 1))

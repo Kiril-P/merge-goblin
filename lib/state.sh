@@ -176,7 +176,8 @@ ui_state_write() {
     --argjson snoozeUntil "$(cfg_get '.snoozeUntil' 0)" \
     --argjson enabled "$(cfg_get '.enabled' true)" \
     --argjson setup "$(ui_setup_complete)" \
-    --argjson repos "$(cfg_get_json '[.repos[]? | {slug, enabled: (.enabled != false)}]' '[]')" \
+    --argjson repos "$(cfg_get_json '[.repos[]? | {slug, enabled: (.enabled != false),
+        provider: (.provider // ""), model: (.model // "")}]' '[]')" \
     --argjson fleet "$(cfg_get_json '.fleet' '[]')" \
     --argjson inbox "$inbox" \
     --argjson stuck "$stuck" \
@@ -187,6 +188,7 @@ ui_state_write() {
         postCommitStatus, postIntentComment, fleetAssignment, skipIfHumanReviewed, refutePass, autoPost,
         manualReviewMode, maxConcurrentJobs, lastRepo,
         notify,
+        skip: {bots: (.skip.bots != false), docsOnly: (.skip.docsOnly == true)},
         providers: (.providers | with_entries(.value |= {model}))
       }' '{}')" \
     --argjson running "$running" --argjson disabled "$disabled" \
