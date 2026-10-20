@@ -212,6 +212,10 @@ the assigned Goblin takes an **atomic lock** (a git ref, which GitHub creates ex
 two configs disagree a PR is never reviewed twice. If the owner's machine is asleep, another
 Goblin picks it up after a grace period.
 
+`goblin fleet status` (and Settings → Team) shows what each teammate's Goblin has been doing,
+read from the claims and review markers it leaves on GitHub: reviewing now, last seen, or no
+sign yet. A Goblin with nothing to review leaves no trace, so "no sign" is not "offline".
+
 ## Cost and control
 
 Only Claude reports real dollar cost; the subscription CLIs report usage but not money, so

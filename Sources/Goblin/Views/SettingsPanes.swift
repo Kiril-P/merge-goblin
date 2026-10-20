@@ -443,16 +443,36 @@ struct TeamPane: View {
                         value: store.snapshot.settings.fleetAssignment, last: true,
                         command: { .setFlag(key: .fleetAssignment, on: $0) })
             }
-            SettingsGroup(title: "Teammates") {
-                if fleet.isEmpty { StatusLine(kind: .info, text: "Just you. Add a teammate's GitHub username if they run the Goblin too.") }
-                ForEach(Array(fleet.enumerated()), id: \.element) { i, name in
-                    SettingRow(title: "@\(name)", last: i == fleet.count - 1) {
-                        Button { Task { await store.perform(.fleetRemove(login: name)) } } label: {
-                            Image(systemName: "minus.circle").font(.system(size: 13))
-                        }.buttonStyle(.goblinQuiet).help("Remove")
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(alignment: .firstTextBaseline) {
+                    SectionLabel(text: "Teammates", trailing: statusNote)
+                    if !fleet.isEmpty { refreshButton }
+                }
+                Card(padding: 0) {
+                    VStack(spacing: 0) {
+                        if fleet.isEmpty { StatusLine(kind: .info, text: "Just you. Add a teammate's GitHub username if they run the Goblin too.") }
+                        if case .failed(let m) = store.fleetState, store.fleetStatus == nil, !fleet.isEmpty {
+                            StatusLine(kind: .warning, text: m)
+                            Divider().opacity(0.6).padding(.leading, 14)
+                        }
+                        ForEach(Array(fleet.enumerated()), id: \.element) { i, name in
+                            TeamMemberRow(login: name, member: store.fleetStatus?.member(name),
+                                          isMe: name.caseInsensitiveCompare(store.snapshot.login) == .orderedSame,
+                                          loading: store.fleetState == .loading, last: i == fleet.count - 1) {
+                                Task { await store.perform(.fleetRemove(login: name)) }
+                            }
+                            .transition(Motion.row)
+                        }
                     }
                 }
+                .animation(Motion.spring, value: fleet)
+                if !fleet.isEmpty {
+                    Text("Read from what each Goblin leaves on GitHub in your watched repos: the claim it takes while reviewing, and the markers on what it posts. One with nothing to review leaves no trace, so “no sign” does not mean offline.")
+                        .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true).padding(.horizontal, 2)
+                }
             }
+            .task(id: fleet) { await store.loadFleetStatus() }
             SettingsGroup(footer: "GitHub usernames use letters, numbers and hyphens.") {
                 SettingRow(title: "Add a teammate", last: true) {
                     HStack(spacing: 8) {
@@ -468,6 +488,26 @@ struct TeamPane: View {
                 }
             }
         }
+    }
+
+    /// "checked 2m ago", or why the list may be old.
+    private var statusNote: String? {
+        guard let f = store.fleetStatus, !fleet.isEmpty else { return nil }
+        if f.stale { return "GitHub unreachable · as of \(Ago.short(f.at))" }
+        if case .failed = store.fleetState { return "last checked \(Ago.short(f.at))" }
+        return f.reposFailed > 0 ? "checked \(Ago.short(f.at)) · \(f.reposFailed) repo\(f.reposFailed == 1 ? "" : "s") unreadable"
+                                 : "checked \(Ago.short(f.at))"
+    }
+
+    private var refreshButton: some View {
+        Button { Task { await store.loadFleetStatus(refresh: true) } } label: {
+            if store.fleetState == .loading { ProgressView().controlSize(.mini) }
+            else { Image(systemName: "arrow.clockwise").font(.system(size: 10.5, weight: .semibold)) }
+        }
+        .buttonStyle(.plain).foregroundStyle(.secondary)
+        .disabled(store.fleetState == .loading)
+        .help("Ask GitHub again")
+        .accessibilityLabel("Refresh teammates")
     }
 
     private func add() {
@@ -721,6 +761,7 @@ struct AboutPane: View {
                     }
                 }
             }
+            UsageGroup(store: store)
             StatsGroup(store: store)
             SettingsGroup(title: "How it works") {
                 SettingRow(title: "He reads your repo's own review rules.", hint: "No configuration needed; a review guide in the repo is followed.")

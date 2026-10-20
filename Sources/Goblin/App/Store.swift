@@ -441,7 +441,9 @@ final class AppStore {
     /// few minutes; within two of the last read this does not even spawn it. Keeps the
     /// last answer on a failure rather than blanking the list.
     func loadFleetStatus(refresh: Bool = false) async {
-        if !refresh, fleetStatus != nil, let at = fleetReadAt, Date().timeIntervalSince(at) < 120 { return }
+        // Fresh enough, and about the same people: nothing to ask.
+        if !refresh, let f = fleetStatus, let at = fleetReadAt, Date().timeIntervalSince(at) < 120,
+           Set(f.members.map { $0.login.lowercased() }) == Set(snapshot.fleet.map { $0.lowercased() }) { return }
         guard cliConfigured, fleetState != .loading, !snapshot.fleet.isEmpty else { return }
         fleetState = .loading
         do {

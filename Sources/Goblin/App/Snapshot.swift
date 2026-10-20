@@ -25,7 +25,11 @@ enum Snapshotter {
             let tag = scheme == .dark ? "dark" : "light"
             await shot(PopoverView(store: store), 400, 580, scheme, "\(dir)/popover-\(tag).png")
             await shot(typedField(store), 400, 200, scheme, "\(dir)/field-typed-\(tag).png")
-            if !readyID.isEmpty { await shot(ReviewWindowView(store: store, jobID: readyID), 760, 760, scheme, "\(dir)/review-ready-\(tag).png") }
+            if !readyID.isEmpty {
+                await shot(ReviewWindowView(store: store, jobID: readyID), 760, 760, scheme, "\(dir)/review-ready-\(tag).png")
+                // the keyboard cursor on the second finding
+                await shot(ReviewWindowView(store: store, jobID: readyID, initialCursor: 1), 760, 760, scheme, "\(dir)/review-keyboard-\(tag).png")
+            }
             if !runningID.isEmpty { await shot(ReviewWindowView(store: store, jobID: runningID), 760, 520, scheme, "\(dir)/review-running-\(tag).png") }
             if !failedID.isEmpty { await shot(ReviewWindowView(store: store, jobID: failedID), 760, 420, scheme, "\(dir)/review-failed-\(tag).png") }
             await shot(SettingsView(store: store), 760, 560, scheme, "\(dir)/settings-\(tag).png")
@@ -63,12 +67,39 @@ enum Snapshotter {
                 (name: "risk", tally: .init(n: 15, addressed: 9, discussed: 2, silent: 4)),
                 (name: "convention", tally: .init(n: 11, addressed: 5, discussed: 2, silent: 4)),
                 (name: "nit", tally: .init(n: 7, addressed: 2, discussed: 1, silent: 4)),
-            ]))
+            ]),
+            fleet: demoFleet(store))
         store.repoSearchOverride = { _ in [
             RepoResult(slug: "acme/billing-api", description: "Invoices, plans and proration", isPrivate: true, permission: "ADMIN", watched: true),
             RepoResult(slug: "acme/web-app", description: "The customer dashboard", isPrivate: true, permission: "WRITE", watched: false),
             RepoResult(slug: "acme/mobile-app", description: "iOS and Android", isPrivate: false, permission: "WRITE", watched: false),
         ] }
+    }
+
+    /// The demo home's teammates: one reviewing right now, one seen hours ago, one never
+    /// seen, and you.
+    private static func demoFleet(_ store: AppStore) -> FleetStatus {
+        let now = Date()
+        func act(_ repo: String, _ pr: Int, _ ago: TimeInterval) -> FleetStatus.Activity {
+            .init(repo: repo, pr: pr, at: now.addingTimeInterval(-ago))
+        }
+        let members: [FleetStatus.Member] = store.snapshot.fleet.map { login in
+            switch login {
+            case "grace":
+                return .init(login: login, isMe: false, presence: .active, lastSeen: now.addingTimeInterval(-90),
+                             reviewing: [act("acme/widgets", 2463, 90)],
+                             recent: [act("acme/widgets", 2459, 5400), act("acme/billing-api", 871, 26_000)])
+            case "linus":
+                return .init(login: login, isMe: false, presence: .seen, lastSeen: now.addingTimeInterval(-3 * 3600),
+                             reviewing: [], recent: [act("acme/billing-api", 869, 3 * 3600)])
+            case store.snapshot.login:
+                return .init(login: login, isMe: true, presence: .active, lastSeen: now.addingTimeInterval(-120),
+                             reviewing: [], recent: [act("acme/widgets", 2455, 3600)])
+            default:
+                return .init(login: login, isMe: false, presence: .unknown, lastSeen: nil, reviewing: [], recent: [])
+            }
+        }
+        return FleetStatus(at: now.addingTimeInterval(-60), members: members)
     }
 
     private static func typedField(_ store: AppStore) -> some View {

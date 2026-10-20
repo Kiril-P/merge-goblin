@@ -22,7 +22,7 @@ cat > "$DIR/config.json" <<JSON
 {"schemaVersion":2,"identity":{"githubLogin":"$LOGIN"},"enabled":true,"provider":"claude",
  "providers":{"claude":{"model":"sonnet","bin":""},"codex":{"model":"","bin":""},"cursor":{"model":"composer-2.5","bin":""}},
  "repos":[{"slug":"acme/widgets","enabled":true},{"slug":"acme/billing-api","enabled":true},{"slug":"acme/mobile","enabled":false}],
- "fleet":["grace","linus"],"setupComplete":true,"lastRepo":"acme/widgets","maxReviewsPerDay":20}
+ "fleet":["$LOGIN","grace","linus","margaret"],"setupComplete":true,"lastRepo":"acme/widgets","maxReviewsPerDay":20}
 JSON
 
 cat > "$DIR/inbox.json" <<JSON
@@ -33,13 +33,31 @@ cat > "$DIR/inbox.json" <<JSON
 JSON
 
 ev() { jq -nc --argjson at "$1" --argjson n "$2" --arg t "$3" --arg repo "$4" --argjson c "$5" --arg st "$6" --arg r "$7" \
-  '{at:$at, number:$n, title:$t, url:("https://github.com/"+$repo+"/pull/"+($n|tostring)), costUsd:$c, status:$st, reason:$r, repo:$repo, provider:"claude", model:"sonnet"}'; }
+  --arg p "${8:-claude}" --arg m "${9:-sonnet}" \
+  '{at:$at, number:$n, title:$t, url:("https://github.com/"+$repo+"/pull/"+($n|tostring)), costUsd:$c, status:$st, reason:$r, repo:$repo, provider:$p, model:$m}'; }
 {
+  # two weeks of history for Settings > About > Usage: claude reports cost, codex does not
+  D=86400
+  for spec in "13 2" "12 1" "11 3" "10 0" "9 2" "8 4" "7 1" "6 0" "5 2" "4 3" "3 1" "2 5"; do
+    day="${spec% *}"; count="${spec#* }"; k=0
+    while [ "$k" -lt "$count" ]; do
+      n=$((2300 + day * 7 + k)); at=$((NOW - day * D + k * 1800))
+      if [ $((k % 3)) -eq 2 ]; then ev "$at" "$n" "Older change $n" acme/widgets 0 posted "" codex gpt-6.1-sol
+      elif [ $((day % 4)) -eq 1 ] && [ "$k" -eq 0 ]; then ev "$at" "$n" "Older change $n" acme/billing-api 1.12 posted "" claude opus
+      else ev "$at" "$n" "Older change $n" acme/billing-api "0.3$k" posted "" claude sonnet; fi
+      k=$((k + 1))
+    done
+  done
+  ev $((NOW - 8 * D)) 2350 "Flaky upload test" acme/widgets 0.04 failed "timeout"
+  # read first, then waiting to be posted: one review, one cost
+  ev $((NOW - 600)) 873 "Fix proration when a plan changes mid-cycle" acme/billing-api 0.38 previewed ""
   ev $((NOW-86000)) 2440 "Add CSV export to the reports page" acme/widgets 0.31 posted ""
   ev $((NOW-52000)) 2447 "Stop double-charging on retried checkouts" acme/billing-api 0.44 posted ""
   ev $((NOW-9000))  2452 "Bump the image pipeline to Node 22" acme/widgets 0 failed "timeout"
   ev $((NOW-3600))  2455 "Cache the feature-flag lookup per request" acme/widgets 0.27 posted ""
-} > "$DIR/events.jsonl"
+} > "$DIR/events.unsorted"
+# the engine only ever appends, so the file is in time order; keep the demo honest
+jq -c -s 'sort_by(.at) | .[]' "$DIR/events.unsorted" > "$DIR/events.jsonl" && rm -f "$DIR/events.unsorted"
 
 mkjob() { # id repo number title phase created extra-json
   mkdir -p "$DIR/jobs/$1"
