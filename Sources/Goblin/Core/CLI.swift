@@ -25,10 +25,19 @@ final class CLI {
 
     static let shared = CLI()
 
-    enum Failure: Error {
+    enum Failure: Error, LocalizedError {
         case notFound(String)
         case timeout
         case cliError(message: String, exit: Int32)
+
+        /// Safe to show a person: no argv, no paths beyond what the CLI itself said.
+        var errorDescription: String? {
+            switch self {
+            case .notFound(let m): return m
+            case .timeout: return "That took too long and was stopped."
+            case .cliError(let m, _): return m.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
     }
 
     struct Output {
@@ -55,20 +64,50 @@ final class CLI {
     /// two levels above bin/goblin.
     let appRoot: String
 
+    /// Where the engine came from, for the About screen and for diagnosing "which
+    /// copy of the CLI is this app actually driving".
+    enum EngineSource: String { case bundled, installed, none }
+    let engineSource: EngineSource
+
     private init() {
         let info = Bundle.main.infoDictionary ?? [:]
-        let cliPath = (info["GBLCLIPath"] as? String) ?? ""
+        let env = ProcessInfo.processInfo.environment
         let plistHome = (info["GBLHome"] as? String) ?? ""
 
-        home = plistHome.isEmpty
-            ? (NSHomeDirectory() as NSString).appendingPathComponent(".goblin")
-            : plistHome
+        // GOBLIN_HOME in the app's own environment wins: that is how a demo or a test
+        // points the app at a sandbox. A normal launch (Finder, login item) has none.
+        if let h = env["GOBLIN_HOME"], h.hasPrefix("/") {
+            home = h
+        } else if !plistHome.isEmpty {
+            home = plistHome
+        } else {
+            home = (NSHomeDirectory() as NSString).appendingPathComponent(".goblin")
+        }
 
-        if cliPath.hasPrefix("/"), FileManager.default.isExecutableFile(atPath: cliPath) {
-            executable = URL(fileURLWithPath: cliPath)
-            appRoot = ((cliPath as NSString).deletingLastPathComponent as NSString).deletingLastPathComponent
+        // The engine travels INSIDE the app (Contents/Resources/engine), so the app and
+        // the scripts it drives are always the same version. A source install pins an
+        // absolute path in Info.plist instead; that is the fallback.
+        let bundled = Bundle.main.resourceURL?
+            .appendingPathComponent("engine/bin/goblin").path ?? ""
+        let pinned = (info["GBLCLIPath"] as? String) ?? ""
+        let fm = FileManager.default
+
+        if let override = env["GOBLIN_CLI"], override.hasPrefix("/"), fm.isExecutableFile(atPath: override) {
+            executable = URL(fileURLWithPath: override)
+            engineSource = .installed
+        } else if fm.isExecutableFile(atPath: bundled) {
+            executable = URL(fileURLWithPath: bundled)
+            engineSource = .bundled
+        } else if pinned.hasPrefix("/"), fm.isExecutableFile(atPath: pinned) {
+            executable = URL(fileURLWithPath: pinned)
+            engineSource = .installed
         } else {
             executable = nil
+            engineSource = .none
+        }
+        if let exe = executable {
+            appRoot = ((exe.path as NSString).deletingLastPathComponent as NSString).deletingLastPathComponent
+        } else {
             appRoot = (home as NSString).appendingPathComponent("app")
         }
     }
@@ -100,6 +139,7 @@ final class CLI {
             "GOBLIN_HOME": home,
             "GOBLIN_APP": appRoot,
             "LANG": "en_US.UTF-8",
+            // The engine's own scheduler and the app must agree on where state lives.
             "USER": user,
             "LOGNAME": inherited["LOGNAME"] ?? user,
         ]
@@ -112,6 +152,7 @@ final class CLI {
 
     var isConfigured: Bool { executable != nil }
 
+    var jobsPath: String { (home as NSString).appendingPathComponent("jobs") }
     var logPath: String { (home as NSString).appendingPathComponent("goblin.log") }
     var configPath: String { (home as NSString).appendingPathComponent("config.json") }
     var uiStatePath: String { (home as NSString).appendingPathComponent("uistate.json") }
@@ -131,6 +172,20 @@ final class CLI {
             guard let self else { return }
             let result = self.exec(argv: argv, timeout: timeout.seconds)
             DispatchQueue.main.async { completion(result) }
+        }
+    }
+
+    /// The same thing, awaitable. Throws `Failure`.
+    func run(_ command: Command) async throws -> Output {
+        let plan: Plan
+        do { plan = try command.validatedPlan() } catch { throw Failure.cliError(message: "\(error)", exit: 2) }
+        guard case .cli(let argv, let timeout, let mutating, _) = plan else {
+            throw Failure.cliError(message: "not a CLI command", exit: 2)
+        }
+        return try await withCheckedThrowingContinuation { cont in
+            run(argv: argv, timeout: timeout, mutating: mutating) { result in
+                cont.resume(with: result)
+            }
         }
     }
 

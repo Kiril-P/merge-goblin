@@ -98,9 +98,12 @@ case "$cmd" in
   # the `ui` aliases, which used to include `panel` and would swallow it.
   panel)    . "$LIB_DIR/cmd_panel.sh";   cmd_panel "$@" ;;
   app)      . "$LIB_DIR/app.sh";         cmd_app "$@" ;;
+  # The app's repo picker asks for `repo-search`; the implementation is `repos search`.
+  repo-search) . "$LIB_DIR/discover.sh"; cmd_repos_search "$@" ;;
+  github-login) . "$LIB_DIR/gh_login.sh"; cmd_github_login "$@" ;;
   accounts) . "$LIB_DIR/discover.sh";    cmd_accounts "$@" ;;
   wizard)   . "$LIB_DIR/discover.sh";    cmd_wizard_state "$@" ;;
-  ui|open)  . "$LIB_DIR/ui.sh";          cmd_ui "$@" ;;
+  ui|open)  . "$LIB_DIR/app.sh";         cmd_ui "$@" ;;
   update)   . "$LIB_DIR/update.sh";      cmd_update "$@" ;;
   version)  echo "$GOBLIN_NAME $GOBLIN_VERSION" ;;
   help|-h|--help) usage ;;

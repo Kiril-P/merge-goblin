@@ -41,6 +41,19 @@ notify() {
   # leaves a backslash free to close the string literal, so a title ending in `\`
   # turned the whole thing into an AppleScript syntax error and silently dropped
   # the notification — `|| true` meant nobody ever found out.
+  # With the menu bar app running, queue the request for it: a banner posted by the
+  # app wears the Goblin's icon, where osascript's wears Script Editor's. Without the
+  # app, osascript is a wrong icon rather than a missing notification.
+  if pgrep -x GoblinBar >/dev/null 2>&1; then
+    goblin_ensure_dirs 2>/dev/null || true
+    local q="$GOBLIN_HOME/notify.jsonl"
+    jq -nc --arg t "$title" --arg m "$message" --arg s "$([ "$sound" = "true" ] && echo Glass || echo '')" \
+       --argjson at "$(now_epoch)" '{at:$at, title:$t, message:$m, sound:$s}' >> "$q" 2>/dev/null
+    if [ "$(wc -l < "$q" 2>/dev/null || echo 0)" -gt 200 ]; then
+      tail -n 50 "$q" > "$q.tmp" 2>/dev/null && mv "$q.tmp" "$q"
+    fi
+    return 0
+  fi
   local script='on run argv
   display notification (item 2 of argv) with title (item 1 of argv)'
   [ "$sound" = "true" ] && script="$script sound name \"Glass\""

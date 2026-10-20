@@ -92,6 +92,14 @@ _panel_set() {
       out="$(_panel_int "$v" 1 1440)"   || { echo "interval must be 1-1440 minutes" >&2; return 2; }
       cfg_set ".intervalSeconds = $((out * 60))"
       echo "interval saved — run '$GOBLIN_SLUG agent reload' (or reinstall) to apply it" ;;
+    max-jobs)
+      out="$(_panel_int "$v" 1 8)"      || { echo "concurrent reviews must be 1-8" >&2; return 2; }
+      cfg_set ".maxConcurrentJobs = $out" ;;
+    manual-mode)
+      case "$v" in
+        preview|post) cfg_set --arg m "$v" '.manualReviewMode = $m' ;;
+        *) echo "manual review mode must be preview or post" >&2; return 2 ;;
+      esac ;;
     timeout)
       out="$(_panel_int "$v" 60 7200)"  || { echo "timeout must be 60-7200 seconds" >&2; return 2; }
       cfg_set ".timeoutSecs = $out" ;;

@@ -46,16 +46,14 @@ and which repo to watch. Then he schedules himself every 15 minutes and drops
 
 If `~/.local/bin` isn't on your `PATH`, the installer tells you the line to add.
 
-## 4. Open the control panel
+## 4. Open the app
 
-Double-click **Merge Goblin.app**, or:
+Double-click **Merge Goblin.app** (or run `goblin ui`). The first time, it walks you
+through GitHub, which subscription to use, and which repo to watch. After that
+everything lives in the app — no terminal needed:
 
-```bash
-goblin ui
-```
-
-Everything lives there — no terminal needed after this point:
-
+- **⌥⌘G, type a PR number, return** — the Goblin reviews it and shows you a preview
+  before anything is posted
 - the on/off switch, and snooze
 - **which subscription reviews** (switch any time)
 - daily spend cap, max reviews per run
@@ -65,9 +63,8 @@ Everything lives there — no terminal needed after this point:
 - a health check with a **Fix** button
 - every review he's posted, with cost
 
-The panel runs only while the app is open. Quit the app (or `goblin ui --stop`) to
-close it. The Goblin keeps reviewing on schedule either way — the panel is just the
-window into him.
+The Goblin keeps reviewing on schedule whether or not the app is open — the app is
+just the window into him.
 
 ## 5. Try it before trusting it
 
@@ -87,7 +84,7 @@ repo's own review guide, so we can tune it for everyone at once.
 ## 6. Join the fleet
 
 So that two of us never review the same PR, everyone lists the same teammates. In the
-panel under **Teammates**, or:
+Settings window under **Teammates**, or:
 
 ```bash
 goblin fleet add kiril && goblin fleet add alice && goblin fleet add bob
@@ -117,10 +114,10 @@ loaded.
 
 | | |
 |---|---|
-| panel toggle, or `goblin off` | full stop, survives reboots |
+| app toggle, or `goblin off` | full stop, survives reboots |
 | `goblin pause` | until next login |
 | `goblin snooze 1h` | auto-resumes |
-| daily cap in the panel | stops once today's spend passes it |
+| daily cap in Settings | stops once today's spend passes it |
 | `./uninstall.sh` | removes him, keeps your history |
 
 ## Worth knowing

@@ -54,6 +54,8 @@ final class Notifier {
     /// engine's osascript fallback is not reachable from here, and pestering is
     /// worse than silence.
     private func ensureAuthorized(_ done: @escaping (Bool) -> Void) {
+        // UserNotifications traps outside an app bundle (swift run, tests, snapshots).
+        guard Bundle.main.bundleIdentifier != nil else { done(false); return }
         if let authorized { done(authorized); return }
         let center = UNUserNotificationCenter.current()
         center.requestAuthorization(options: [.alert, .sound]) { [weak self] granted, err in

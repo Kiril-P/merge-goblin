@@ -361,43 +361,6 @@ test_ui_state_is_valid_json() {
   teardown
 }
 
-test_ui_serves_and_refuses_bad_token() {
-  setup
-  . "$ROOT/lib/ui.sh"
-  local py; py="$(ui_python)" || { echo "no python3 — skipping"; teardown; return 0; }
-  # The panel must never be reachable without the session token.
-  local port=8791
-  GOBLIN_CLI="$ROOT/bin/$GOBLIN_SLUG" GOBLIN_HOME="$GOBLIN_HOME" GOBLIN_UI_PORT="$port" \
-    GOBLIN_UI_OPEN=0 GOBLIN_UI_TOKEN=testtoken "$py" "$ROOT/share/ui/server.py" >/dev/null 2>&1 &
-  local pid=$!
-  local i=0
-  while [ $i -lt 25 ]; do
-    curl -s -o /dev/null "http://127.0.0.1:$port/" && break
-    sleep 0.2; i=$((i+1))
-  done
-  local good bad
-  good="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port/?token=testtoken")"
-  bad="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port/?token=wrong")"
-  kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
-  eq "200" "$good" || return 1
-  eq "403" "$bad"  || return 1
-  teardown
-}
-
-test_ui_rejects_unlisted_verbs() {
-  # the action endpoint is an allowlist, so a stray request can't run anything
-  grep -q 'refused' "$ROOT/share/ui/server.py" || return 1
-  python3 - "$ROOT/share/ui/server.py" <<'PY'
-import re, sys
-src = open(sys.argv[1]).read()
-allowed = re.search(r"ALLOWED = \{(.*?)\}", src, re.S).group(1)
-for bad in ("rm", "sh", "eval", "exec", "curl"):
-    assert f'"{bad}"' not in allowed, f"{bad} is allowlisted"
-for need in ("on", "off", "doctor", "run", "provider"):
-    assert f'"{need}"' in allowed, f"{need} missing"
-PY
-}
-
 test_goblin_voice_covers_every_verdict() {
   setup
   local a b c d
@@ -586,8 +549,7 @@ test_security_tests_are_still_registered() {
            test_notify_survives_hostile_pr_title \
            test_panel_has_no_generic_config_setter \
            test_panel_settings_are_validated \
-           test_panel_csp_forbids_inline \
-           test_panel_has_no_html_injection_sinks; do
+           test_app_never_spawns_a_shell; do
     grep -q "^${t}() {" "$ROOT/tests/run.sh" \
       || { echo "security test removed: $t"; return 1; }
     grep -qE "^t .*[\"' ]${t}\$" "$ROOT/tests/run.sh" \
@@ -738,6 +700,7 @@ test_ref_parse() {
   ref_parse "-5"             && return 1
   ref_parse "123456789"      && return 1     # no PR has eight digits; this is a typo or an attack
   ref_parse 'a b/c#1'        && return 1
+  ref_parse '-x/y#1'         && return 1     # an owner never starts with a dash
   ref_parse 'acme/widgets#1; rm -rf /' && return 1
   ref_parse 'https://github.com/acme/widgets/issues/5' && return 1
   teardown
@@ -904,6 +867,19 @@ test_review_provider_override_is_not_persisted() {
   review_env_done
 }
 
+test_provider_list_json_is_the_shape_the_app_decodes() {
+  # The app asks for `provider list --json`. The CLI once ignored the flag and printed
+  # prose, which the app could not parse, so the UI said "no AI CLIs found" with three
+  # installed. The three keys below are the ones ProviderInfo reads.
+  review_env
+  local out
+  out="$(GOBLIN_PATH_FIRST="$ROOT/tests/fixtures/bin" "$G" provider list --json 2>/dev/null)"
+  printf '%s' "$out" | jq -e 'type == "array" and length >= 1 and all(.[]; has("name") and has("available") and has("current"))' >/dev/null \
+    || { echo "not the array the app decodes: $out"; return 1; }
+  eq "1" "$(printf '%s' "$out" | jq '[.[] | select(.current)] | length')" || return 1
+  review_env_done
+}
+
 # ---------------------------------------------------------------- update ---
 test_update_version_compare() {
   setup
@@ -961,36 +937,6 @@ test_ui_state_carries_the_update_flag() {
   # The panel reads only this cache, so the banner lives or dies by these keys.
   eq "true"  "$(jq -r '.update.available' "$UISTATE")" || return 1
   eq "9.9.9" "$(jq -r '.update.latest'    "$UISTATE")" || return 1
-  teardown
-}
-
-test_ui_parses_every_provider_row() {
-  setup
-  export ROOT
-  local py; py="$(. "$ROOT/lib/ui.sh"; ui_python)" \
-    || { echo "no python3 — skipping"; teardown; return 0; }
-  # Regression: run_bob returns stdout.strip(), so the FIRST row arrives without
-  # the two-space indent the others keep. Slicing a fixed-width line[2:] off it
-  # turned "claude" into "aude", and the panel's Claude button then shelled
-  # `provider use aude` — which the CLI rejects. Parse by marker, not by column.
-  # No __pycache__ in the tree: it would be a build artefact in a shell project.
-  PYTHONDONTWRITEBYTECODE=1 "$py" - <<'PY' || { teardown; return 1; }
-import importlib.util, os
-spec = importlib.util.spec_from_file_location(
-    "goblin_ui", os.path.join(os.environ["ROOT"], "share", "ui", "server.py"))
-m = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(m)
-
-rows = ("  claude  ready    team            cost: yes\n"
-        "  codex   missing\n"
-        "▸ cursor  ready    cursor          cost: n/a")
-m.run_bob = lambda *a, **k: {"ok": True, "code": 0, "out": rows.strip(), "err": ""}
-
-got = m.providers(force=True)
-assert [p["id"] for p in got] == ["claude", "codex", "cursor"], got
-assert [p["current"] for p in got] == [False, False, True], got
-assert [p["state"] for p in got] == ["ready", "missing", "ready"], got
-PY
   teardown
 }
 
@@ -1267,7 +1213,7 @@ test_panel_contract_matches_the_app() {
   # every toggle in the Behaviour and Notifications sections silently did nothing.
   # Keys are derived from the Swift source rather than duplicated here, so adding a
   # case in one place and forgetting the other fails immediately.
-  local sw="$ROOT/app/Command.swift"
+  local sw="$ROOT/Sources/Goblin/Core/Command.swift"
   [ -f "$sw" ] || { echo "Command.swift missing"; return 1; }
 
   local bad="" k
@@ -1277,6 +1223,7 @@ test_panel_contract_matches_the_app() {
     case "$k" in
       # keys the app supplies with values we cannot guess generically
       identity)        cmd_panel set "$k" someuser  >/dev/null 2>&1 || bad="$bad $k" ;;
+      manual-mode)     cmd_panel set "$k" preview   >/dev/null 2>&1 || bad="$bad $k" ;;
       verdict-mode)    cmd_panel set "$k" comment   >/dev/null 2>&1 || bad="$bad $k" ;;
       provider-model)  cmd_panel set "$k" claude sonnet >/dev/null 2>&1 || bad="$bad $k" ;;
       allow-approve)   cmd_panel set "$k" false     >/dev/null 2>&1 || bad="$bad $k" ;;
@@ -1304,6 +1251,18 @@ test_panel_has_no_generic_config_setter() {
   grep -q "'bin'" "$ROOT/lib/cmd_panel.sh" \
     && { echo "cmd_panel.sh mentions a bin setting"; return 1; }
   return 0
+}
+
+test_app_never_spawns_a_shell() {
+  # The app's only way to act is argv through the closed Command enum. A shell, a
+  # `-c`, or a second Process() would reopen the injection surface the web panel's
+  # allowlist and CSP tests used to guard: a PR title or repo slug reaching a shell.
+  local hits
+  hits="$(grep -rnE '/bin/(ba|z)?sh|"-c"|/usr/bin/env|NSAppleScript|Process\(\)' "$ROOT/Sources" \
+            | grep -v 'Sources/Goblin/Core/CLI.swift' || true)"
+  [ -z "$hits" ] || { echo "$hits"; return 1; }
+  # and CLI.swift builds exactly one Process, from an argv array
+  eq "1" "$(grep -c 'Process()' "$ROOT/Sources/Goblin/Core/CLI.swift")" || return 1
 }
 
 test_panel_settings_are_validated() {
@@ -1350,66 +1309,6 @@ test_panel_settings_are_validated() {
   teardown
 }
 
-test_panel_csp_forbids_inline() {
-  local f="$ROOT/share/ui/panel.html"
-  [ -f "$f" ] || { echo "panel.html missing"; return 1; }
-  grep -q "default-src 'none'" "$f" || { echo "no restrictive CSP"; return 1; }
-  # unsafe-inline would make the whole DOM-only discipline pointless, and is the
-  # reason the CSS and JS live in separate files rather than inline blocks.
-  grep -q 'unsafe-inline' "$f" && { echo "CSP allows unsafe-inline"; return 1; }
-  # NOTE: on feat/menu-bar-app this test also asserted that share/ui/server.py and
-  # lib/ui.sh stayed deleted, because that branch retired the python panel outright.
-  # They are still here deliberately: the menu bar app is new on this trunk and
-  # `goblin ui` is the fallback while it earns trust. Retiring the python panel is a
-  # follow-up, and this assertion comes back with it.
-  return 0
-}
-
-test_panel_has_no_html_injection_sinks() {
-  # The old panel built rows with innerHTML from PR titles and repo slugs, and put
-  # them inside onclick="..." — two nested contexts, so one apostrophe broke out.
-  # Anyone able to open a PR in a watched repo could run JS in the panel. The fix is
-  # structural (build DOM, never markup), so the gate is structural too.
-  # Scoped to the menu bar app's own panel. The python panel (app.html) predates
-  # this discipline and still builds markup with innerHTML; it is reachable only
-  # over loopback behind a per-session token, whereas panel.html renders inside the
-  # app itself with the CSP asserted above, so the structural gate is what holds
-  # there. When the python panel is retired this widens back to share/ui/*.
-  local hits
-  hits="$(grep -nE 'innerHTML|outerHTML|insertAdjacentHTML|document\.write|onclick=|eval\(|new Function' \
-            "$ROOT/share/ui/panel.html" "$ROOT/share/ui/panel.js" \
-            "$ROOT/share/ui/wizard.js" 2>/dev/null || true)"
-  [ -z "$hits" ] || { echo "$hits"; return 1; }
-}
-
-test_app_build_stages_before_swapping() {
-  # The build used to killall the app and then compile and copy straight into
-  # ~/Applications/…app. That takes ten-plus seconds, the bar's LaunchAgent has
-  # KeepAlive, and macOS refuses to let an unprivileged process modify a signed
-  # bundle whose app is running — so the copy EPERMed partway and left a bundle with
-  # an executable and no Info.plist. Compiling swift here would make the suite slow
-  # and machine-dependent, so assert the structure that prevents it instead.
-  local src="$ROOT/lib/app.sh"
-
-  # resources and the plist are written under the staging dir, never APP_BUNDLE
-  grep -qE 'stage="\$GOBLIN_HOME/build/' "$src" \
-    || { echo "app_build no longer stages the bundle"; return 1; }
-  grep -qE 'plist="\$stage/Contents/Info.plist"' "$src" \
-    || { echo "the Info.plist is not written into the staging bundle"; return 1; }
-  grep -qE 'macos="\$stage/Contents/MacOS"' "$src" \
-    || { echo "the executable is not built into the staging bundle"; return 1; }
-
-  # the swap must be gated on a complete bundle, or staging buys nothing
-  grep -q 'app_swap_bundle' "$src" || { echo "no swap step"; return 1; }
-  grep -qE 'plutil -extract GBLCLIPath raw "\$plist"' "$src" \
-    || { echo "the swap is not gated on the CLI path being present"; return 1; }
-
-  # and it must take the LaunchAgent down first, or KeepAlive relaunches the app
-  # from a path being deleted — the original corruption
-  grep -q 'launchctl bootout' "$src" || { echo "the swap does not stop the agent"; return 1; }
-  return 0
-}
-
 printf '\n  goblin test suite\n\n'
 t "config: defaults"                     test_config_defaults
 t "config: corrupt file recovers"        test_config_corrupt_file_recovers
@@ -1436,9 +1335,6 @@ t "fleet: empty fleet"                   test_assignment_empty_fleet
 t "agent: label is per-user"             test_agent_label_is_per_user
 t "migrate: preserves ledger + events"   test_migrate_preserves_ledger_and_events
 t "ui: state cache is valid json"        test_ui_state_is_valid_json
-t "ui: serves, refuses bad token"        test_ui_serves_and_refuses_bad_token
-t "ui: action verbs are allowlisted"     test_ui_rejects_unlisted_verbs
-t "ui: every provider row parses"        test_ui_parses_every_provider_row
 t "ui: state carries update flag"        test_ui_state_carries_the_update_flag
 t "update: version compare"              test_update_version_compare
 t "update: flag clears after upgrade"    test_update_flag_does_not_outlive_the_upgrade
@@ -1470,9 +1366,7 @@ t "bar: glyph decision table"            test_bar_glyph_decision_table
 t "panel: contract matches the app"      test_panel_contract_matches_the_app
 t "panel: no generic config setter"      test_panel_has_no_generic_config_setter
 t "panel: settings are validated"        test_panel_settings_are_validated
-t "panel: csp forbids inline"            test_panel_csp_forbids_inline
-t "panel: no html injection sinks"       test_panel_has_no_html_injection_sinks
-t "app: build stages before swapping"    test_app_build_stages_before_swapping
+t "app: never spawns a shell"            test_app_never_spawns_a_shell
 t "hygiene: no personal paths"           test_no_hardcoded_personal_paths
 
 t "review: ref parsing"                     test_ref_parse
@@ -1487,6 +1381,7 @@ t "review: run --pr never fans out"         test_run_pr_never_fans_out_across_re
 t "review: cancel is not a failure"         test_review_cancel_stops_the_model_and_is_not_a_failure
 t "review: interrupted job reported"        test_review_interrupted_job_is_reported_not_spun
 t "review: model override is not persisted" test_review_provider_override_is_not_persisted
+t "provider: list --json matches the app"   test_provider_list_json_is_the_shape_the_app_decodes
 
 printf '\n  %s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -gt 0 ] && { printf '  failed:%b\n\n' "$FAILED"; exit 1; }

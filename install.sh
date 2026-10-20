@@ -77,16 +77,13 @@ DEFAULT_PROVIDER="$(printf '%s' "$found" | awk '{print $1}')"
 # --- 3. copy the app ------------------------------------------------------
 say ""; say "installing"
 mkdir -p "$GOBLIN_HOME" "$APP" || { err "cannot create $GOBLIN_HOME"; exit 1; }
-# app/ and app-tests/ come too: `goblin app rebuild` has to work from the INSTALLED
-# copy, because the clone may be in ~/Documents where launchd cannot read it — and
-# the whole reason the runtime lives here is that TCC restriction. Without the
-# sources, app_build silently skipped and the installer reported success while
-# installing no app at all.
+# The engine (what launchd runs) lives here, outside ~/Documents where launchd cannot
+# read a clone — that TCC restriction is the whole reason it is copied at all. The
+# menu bar app carries its own copy of the engine inside the bundle.
 # ${APP:?} so an empty APP can never turn this into `rm -rf /lib`.
 rm -rf "${APP:?}/lib" "${APP:?}/bin" "${APP:?}/share" "${APP:?}/templates" \
        "${APP:?}/app" "${APP:?}/app-tests"
-cp -R "$SRC/lib" "$SRC/bin" "$SRC/share" "$SRC/templates" \
-      "$SRC/app" "$SRC/app-tests" "$APP/" 2>/dev/null
+cp -R "$SRC/lib" "$SRC/bin" "$SRC/share" "$SRC/templates" "$APP/" 2>/dev/null
 chmod +x "$APP/bin/$GOBLIN_SLUG"
 ok "app  → $APP"
 
@@ -159,21 +156,15 @@ if [ "$WITH_AGENT" = true ]; then
 fi
 
 # --- 7. menu bar app ------------------------------------------------------
-# Built here rather than shipped: the app is ad-hoc signed on the machine it runs
-# on, so there is nothing to notarise and no Gatekeeper prompt. app_build stages
-# into $GOBLIN_HOME/build and swaps the finished bundle into place, so a running
-# app is never modified underneath itself.
-#
-# It REPLACES the bundle rather than writing into it. The previous version of this
-# step wrote a plist and a launcher script into whatever already existed at that
-# path, which meant an older bundle survived in pieces: the 0.3.x app kept its
-# compiled binary while losing the GBLCLIPath key that tells it where the CLI is,
-# and every action in the panel then failed with "the Merge Goblin CLI path is
-# missing from the app bundle". A bundle is replaced whole or not at all.
+# Built from this checkout with build.sh and swapped into ~/Applications whole, so a
+# running app is never modified underneath itself. Ad-hoc signed on this machine:
+# no Gatekeeper prompt. (Prefer the notarised download from the releases page if you
+# do not want a Swift toolchain.)
 if [ "$WITH_MENU" = true ]; then
   say ""; say "menu bar app"
   # shellcheck source=lib/app.sh
   . "$APP/lib/app.sh"
+  export GOBLIN_SRC="$SRC"
   if app_install; then
     ok "app  → $APP_BUNDLE"
   else

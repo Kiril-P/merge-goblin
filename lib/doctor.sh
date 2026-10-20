@@ -191,12 +191,11 @@ doctor_agent() {
 }
 
 doctor_menu() {
-  . "$LIB_DIR/ui.sh"
-  local py
-  if py="$(ui_python)"; then
-    _doc ok "control panel" "ready — run: $GOBLIN_SLUG ui   ($py)"
+  . "$LIB_DIR/app.sh"
+  if [ -x "$(app_exec_path)" ]; then
+    _doc ok "menu bar app" "installed — run: $GOBLIN_SLUG ui"
   else
-    _doc warn "control panel" "needs python3" "xcode-select --install"
+    _doc warn "menu bar app" "not installed" "$GOBLIN_SLUG app rebuild   (from a git checkout)"
   fi
 }
 

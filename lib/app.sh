@@ -1,33 +1,28 @@
 #!/usr/bin/env bash
 # app.sh — the menu bar app: build, install, remove, login item.
 #
-# The app is Swift, so it needs a compile step. That step lives here rather than
-# in install.sh for three reasons: shellcheck covers lib/, `goblin app rebuild`
-# exists for when someone edits share/ui/panel.css and wants to see it, and
-# install.sh stays a script about installing rather than about Swift.
+# The app is a SwiftPM package (Package.swift, Sources/Goblin) and build.sh turns it
+# into a signed bundle that carries the engine inside it. This file is the thin
+# wrapper that puts that bundle where macOS expects it and manages the login item.
+# It needs a checkout to build from; an app installed from a release has nothing to
+# rebuild and does not need this.
 #
-# Nothing here requires Xcode. AppKit and WebKit are present in the Command Line
-# Tools alone, so there is no xcodebuild, no .xcodeproj, no asset catalog (actool
-# is Xcode-only) and no nib (ibtool is Xcode-only). If swiftc is missing entirely
-# the build prints the one-line fix and SKIPS, because a missing menu bar app must
-# never be the reason an install fails — the CLI works without it.
+# If the Swift toolchain is missing the build prints the one-line fix and SKIPS,
+# because a missing menu bar app must never be the reason an install fails — the
+# CLI works without it.
 #
 # Written for bash 3.2, which is what /bin/bash on macOS actually is.
 
-GOBLIN_APP_SRC="${GOBLIN_APP_SRC:-$GOBLIN_APP/app}"
-GOBLIN_APP_TEST_SRC="${GOBLIN_APP_TEST_SRC:-$GOBLIN_APP/app-tests}"
 APP_EXEC_NAME="GoblinBar"
 APP_BUNDLE="${GOBLIN_APP_BUNDLE:-$HOME/Applications/$GOBLIN_SHORT.app}"
 
-# LaunchServices caches an app's Info.plist by path. The bundle at this path is
-# changing its LSUIElement status (the old one was a script bundle without it), so
-# without a forced re-register macOS keeps answering from the stale copy and the
-# app gets a phantom Dock icon it can never lose.
+# LaunchServices caches an app's Info.plist by path, so a bundle replaced in place
+# has to be re-registered or macOS keeps answering from the stale copy.
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 
 # Same sanitiser as goblin_agent_label() in paths.sh, so the two labels agree on
-# what a username is. The bundle identifier and the login-item label are the same
-# string on purpose: one name to grep for in `launchctl list` and Activity Monitor.
+# what a username is. The login-item label is what the app itself computes
+# (LoginItem.label in Store.swift): one name to grep for in `launchctl list`.
 app_bundle_id() {
   local u
   u="$(id -un 2>/dev/null | tr -cd '[:alnum:]._-')"
@@ -37,135 +32,34 @@ app_bundle_id() {
 app_bar_plist() { printf '%s/Library/LaunchAgents/%s.plist' "$HOME" "$(app_bundle_id)"; }
 app_exec_path() { printf '%s/Contents/MacOS/%s' "$APP_BUNDLE" "$APP_EXEC_NAME"; }
 
-# --- toolchain ------------------------------------------------------------
+# --- build ----------------------------------------------------------------
 
-# Prefer xcrun's swiftc so the right SDK is selected on a machine that has both
-# the Command Line Tools and Xcode.
-app_swiftc() {
-  local p
-  if command -v xcrun >/dev/null 2>&1; then
-    p="$(xcrun --sdk macosx --find swiftc 2>/dev/null)"
-    [ -n "$p" ] && [ -x "$p" ] && { printf '%s' "$p"; return 0; }
+# GOBLIN_SRC is the checkout to build from (install.sh sets it); running from a
+# checkout, GOBLIN_APP already is one.
+app_build() {
+  local src="${GOBLIN_SRC:-$GOBLIN_APP}" stage
+  if [ ! -x "$src/build.sh" ] || [ ! -f "$src/Package.swift" ]; then
+    echo "  ! no app sources at $src — rebuild from a git checkout of $GOBLIN_SLUG" >&2
+    return 1
   fi
-  p="$(command -v swiftc 2>/dev/null)"
-  [ -n "$p" ] && { printf '%s' "$p"; return 0; }
-  return 1
-}
-
-app_swiftc_missing_hint() {
-  cat >&2 <<EOF
-  ! the menu bar app needs swiftc, which comes with the Xcode command line tools:
+  if ! command -v swift >/dev/null 2>&1; then
+    cat >&2 <<EOF
+  ! the menu bar app needs the Swift toolchain, which comes with the Xcode command line tools:
 
         xcode-select --install
 
-    skipping the app for now — the CLI works without it, and
-    '$GOBLIN_SLUG app rebuild' will pick it up once the tools are installed.
+    skipping the app for now — the CLI works without it.
 EOF
-}
-
-# --- build ----------------------------------------------------------------
-
-app_build() {
-  local swiftc sdk target macos res f plist stage
-  local -a flags
-
-  if [ ! -d "$GOBLIN_APP_SRC" ]; then
-    echo "  ! swift sources not found at $GOBLIN_APP_SRC — skipping the menu bar app" >&2
-    return 0
+    return 1
   fi
-
-  if ! swiftc="$(app_swiftc)"; then
-    app_swiftc_missing_hint
-    return 0
+  stage="$(mktemp -d)" || return 1
+  if ! "$src/build.sh" --out "$stage" >&2; then
+    rm -rf "$stage"; echo "  ✗ the app did not build" >&2; return 1
   fi
-
-  # Before the compile, not after: a silent ten-second pause in an installer
-  # reads as a hang, and people kill it.
-  echo "  compiling the menu bar app (about 10 seconds)…"
-
-  # BUILD INTO A STAGING BUNDLE, NEVER THE LIVE ONE.
-  #
-  # This used to killall the app and then compile and copy straight into
-  # ~/Applications/…app over ten-plus seconds. The bar's LaunchAgent has
-  # KeepAlive, so it restarted the app a second or two into that window — and
-  # macOS will not let an unprivileged process modify a signed bundle whose app is
-  # running (the bundle carries com.apple.provenance, so App Management applies).
-  # The copy into Contents/Resources/ui failed with EPERM, app_build returned early,
-  # and because the Info.plist is written after the resources the result was a
-  # bundle with an executable and NO Info.plist. The app still launched, because the
-  # LaunchAgent execs the binary directly and does not need one, but every
-  # Info.plist lookup then returned nil — surfacing as "the Merge Goblin CLI path is
-  # missing from the app bundle" in the panel. Killing the app first is not a fix;
-  # the agent races the build every time.
-  #
-  # Staging means the live bundle is untouched until a complete, signed bundle
-  # exists, and the swap is a delete-and-move rather than an in-place edit.
-  stage="$GOBLIN_HOME/build/$(basename "$APP_BUNDLE")"
+  app_swap_bundle "$stage/$GOBLIN_SHORT.app"
+  local rc=$?
   rm -rf "$stage"
-  macos="$stage/Contents/MacOS"
-  res="$stage/Contents/Resources"
-  mkdir -p "$macos" "$res/ui" || { echo "  ✗ cannot create $stage" >&2; return 1; }
-
-  target="$(uname -m)-apple-macos13.0"
-  sdk="$(xcrun --sdk macosx --show-sdk-path 2>/dev/null)"
-  flags=(-O -whole-module-optimization -target "$target" -framework AppKit -framework WebKit)
-  [ -n "$sdk" ] && flags=("${flags[@]}" -sdk "$sdk")
-
-  if ! "$swiftc" "${flags[@]}" -o "$macos/$APP_EXEC_NAME" "$GOBLIN_APP_SRC"/*.swift; then
-    echo "  ✗ the menu bar app did not compile" >&2
-    return 1
-  fi
-
-  # The panel is served to a WKWebView out of Contents/Resources/ui, by exact
-  # filename (see app/ResourceScheme.swift). Adding a file to the panel means
-  # adding it in both places.
-  for f in panel.html panel.css panel.js wizard.js goblin.svg goblin-bar.pdf; do
-    if [ -f "$SHARE_DIR/ui/$f" ]; then
-      cp "$SHARE_DIR/ui/$f" "$res/ui/$f" || return 1
-    else
-      echo "  ! share/ui/$f is missing; the panel will be incomplete" >&2
-    fi
-  done
-  [ -f "$SHARE_DIR/ui/goblin.icns" ] && cp "$SHARE_DIR/ui/goblin.icns" "$res/goblin.icns"
-
-  plist="$stage/Contents/Info.plist"
-  sed -e "s|__NAME__|$GOBLIN_NAME|g" \
-      -e "s|__SHORT__|$GOBLIN_SHORT|g" \
-      -e "s|__VERSION__|$GOBLIN_VERSION|g" \
-      -e "s|__BUNDLE_ID__|$(app_bundle_id)|g" \
-      -e "s|__EXEC__|$APP_EXEC_NAME|g" \
-      -e "s|__CLI__|$GOBLIN_APP/bin/$GOBLIN_SLUG|g" \
-      -e "s|__GOBLIN_HOME__|$GOBLIN_HOME|g" \
-      "$TEMPLATE_DIR/app-info.plist.tmpl" > "$plist"
-  if ! plutil -lint "$plist" >/dev/null 2>&1; then
-    echo "  ✗ generated Info.plist is invalid: $plist" >&2
-    return 1
-  fi
-
-  # AFTER every file is in place: a signature covers the bundle's contents, so
-  # signing first and then copying resources produces a bundle that fails its own
-  # validation. Ad-hoc (--sign -) is enough for a locally built app.
-  if ! codesign --force --sign - --identifier "$(app_bundle_id)" "$stage" >/dev/null 2>&1; then
-    echo "  ! ad-hoc signing failed; macOS may refuse to launch the app" >&2
-  fi
-
-  # Refuse to swap in anything incomplete. The whole point of staging is that a
-  # failed build leaves the working app alone, so verify the two things whose
-  # absence produced the broken half-bundle before touching what is installed.
-  if [ ! -x "$macos/$APP_EXEC_NAME" ]; then
-    echo "  ✗ built bundle has no executable — keeping the installed app" >&2
-    return 1
-  fi
-  if ! plutil -extract GBLCLIPath raw "$plist" >/dev/null 2>&1; then
-    echo "  ✗ built bundle has no CLI path in Info.plist — keeping the installed app" >&2
-    return 1
-  fi
-
-  app_swap_bundle "$stage" || return 1
-  rm -rf "$stage"
-
-  echo "  ✓ menu bar app → $APP_BUNDLE"
-  return 0
+  return $rc
 }
 
 # app_swap_bundle <staged.app> — replace the installed bundle with a built one.
@@ -213,30 +107,6 @@ app_swap_bundle() {
     launchctl bootstrap "gui/$uid" "$plist_agent" 2>/dev/null || true
   fi
   return 0
-}
-
-# --- tests ----------------------------------------------------------------
-
-# The allowlist's test suite. A plain executable, not XCTest, because XCTest needs
-# xcodebuild or a Swift package and this project deliberately needs neither.
-app_test() {
-  local swiftc sdk out
-  local -a flags
-
-  [ -d "$GOBLIN_APP_TEST_SRC" ] || { echo "no app tests at $GOBLIN_APP_TEST_SRC" >&2; return 0; }
-  if ! swiftc="$(app_swiftc)"; then app_swiftc_missing_hint; return 0; fi
-
-  out="${RUNTMP:-/tmp}/goblin-app-tests"
-  mkdir -p "$(dirname "$out")" 2>/dev/null || true
-  sdk="$(xcrun --sdk macosx --show-sdk-path 2>/dev/null)"
-  flags=(-target "$(uname -m)-apple-macos13.0")
-  [ -n "$sdk" ] && flags=("${flags[@]}" -sdk "$sdk")
-
-  # Command.swift only: it imports Foundation and nothing else, precisely so the
-  # allowlist can be tested with no window server and no app bundle.
-  "$swiftc" "${flags[@]}" -o "$out" \
-    "$GOBLIN_APP_SRC/Command.swift" "$GOBLIN_APP_TEST_SRC/main.swift" || return 1
-  "$out"
 }
 
 # --- install / remove -----------------------------------------------------
@@ -380,7 +250,6 @@ cmd_app() {
     open-wizard)   cmd_app_open_wizard ;;
     install)       app_install ;;
     remove|uninstall) app_remove ;;
-    test)          app_test ;;
     path)          echo "$APP_BUNDLE" ;;
     label)         app_bundle_id; echo ;;
     login-item)
@@ -397,7 +266,7 @@ cmd_app() {
       echo "identifier: $(app_bundle_id)"
       echo "login item: $(app_login_item_status)" ;;
     *)
-      echo "usage: $GOBLIN_SLUG app [status|rebuild|install|remove|test|path|login-item on|off]" >&2
+      echo "usage: $GOBLIN_SLUG app [status|rebuild|install|remove|path|login-item on|off]" >&2
       return 2 ;;
   esac
 }

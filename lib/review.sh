@@ -18,7 +18,9 @@
 
 # --- refs --------------------------------------------------------------------
 
-REF_SLUG_RE='^[A-Za-z0-9._-]{1,100}/[A-Za-z0-9._-]{1,100}$'
+# The owner starts with a letter or digit (GitHub's own rule), so a slug can never be
+# read as an option.
+REF_SLUG_RE='^[A-Za-z0-9][A-Za-z0-9._-]{0,99}/[A-Za-z0-9._-]{1,100}$'
 
 # ref_parse <ref> → "slug|number" (slug may be empty), or non-zero if it is not a ref.
 ref_parse() {
@@ -323,6 +325,9 @@ cmd_post() {
   while [ $# -gt 0 ]; do
     case "$1" in
       --edits) edits="${2:-}"; shift 2 ;;
+      # The app writes jobs/<id>/edits.json itself and names no path: nothing a UI
+      # could be talked into passing can point this at some other file.
+      --saved-edits) edits="@saved"; shift ;;
       --json)  json=true; shift ;;
       -*) echo "goblin post: unknown option $1" >&2; return 2 ;;
       *) id="$1"; shift ;;
@@ -335,6 +340,9 @@ cmd_post() {
   case "$ph" in ready|failed) ;; *) echo "goblin: job $id is $ph, not waiting to be posted" >&2; return 1 ;; esac
 
   cfg_ensure; goblin_ensure_dirs
+  if [ "$edits" = "@saved" ]; then
+    edits="$dir/edits.json"; [ -f "$edits" ] || edits=""
+  fi
   GOBLIN_JOB_ID="$id"; GOBLIN_JOB_DIR="$dir"
   job_write "$id" "$(jq -nc --argjson p "$$" '{pid:$p, error:"", errorDetail:""}')"
   job_phase posting

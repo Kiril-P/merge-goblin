@@ -84,7 +84,6 @@ enum BarIcon {
     /// The bundled vector goblin. Loaded once; nil is survivable (see fallback).
     private static let pdf: NSPDFImageRep? = {
         guard let url = Bundle.main.resourceURL?
-                .appendingPathComponent("ui", isDirectory: true)
                 .appendingPathComponent("goblin-bar.pdf"),
               let data = try? Data(contentsOf: url) else { return nil }
         return NSPDFImageRep(data: data)

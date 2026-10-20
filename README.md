@@ -13,8 +13,29 @@ plus a second comment answering "does this actually do what the ticket asked?"
 >
 > **🔴 1 blocker · 🟠 2 convention**
 
-He is a desktop control panel and a CLI, running on your Mac, on your schedule, on
+He is a native Mac menu bar app and a CLI, running on your Mac, on your schedule, on
 your account — nothing is sent anywhere except to the AI CLI you already use.
+
+## Review any PR by number
+
+Press **⌥⌘G**, type `2456`, hit return. That's it — a Goblin goes off, reads the diff and
+the repo's own rules, and comes back with a **preview** of the review. You read it, drop or
+reword anything you disagree with, and only then does it post. Nothing reaches GitHub until
+you say so.
+
+```bash
+goblin review 2456                     # preview first (the default for manual reviews)
+goblin review acme/widgets#2456        # or a repo-qualified ref, or a full PR URL
+goblin review 2456 --focus security    # full · security · summary
+goblin review 2456 --post              # skip the preview, post straight away
+goblin jobs                            # what is running or waiting for you
+goblin cancel <job>
+```
+
+A bare number resolves against the repo you are standing in, your only watched repo, or
+the last one you used — and asks when it genuinely can't tell. Copy a PR link anywhere and
+the menu bar app offers to review it. `goblin://review/acme/widgets/2456` links open the
+same preview (they can never post on their own).
 
 ---
 
@@ -56,33 +77,30 @@ scheduler behind your back. Turn the check off with `goblin config set .update.n
 brew install gh jq                      # if you need them
 ```
 
-The installer also drops **Merge Goblin.app** in `~/Applications` — a menu bar app that
-shows what he's doing, which PRs are waiting for you, and lets you change everything below
-without touching a terminal. Turn on **Start at login** from its menu and it's there every
-morning.
+The installer also drops **Merge Goblin.app** in `~/Applications` — a native SwiftUI menu
+bar app that shows what he's doing, which PRs are waiting for you, and lets you change
+everything below without touching a terminal. Turn on **Start at login** in Settings and
+it's there every morning. The first launch walks you through GitHub, which AI subscription
+to use, and which repo to watch.
 
-It's compiled on your machine from `app/` (about ten seconds, AppKit and WebKit only) and
-ad-hoc signed, so there is no Xcode project, nothing to notarise and no Gatekeeper prompt.
-`xcode-select --install` is all it needs; if `swiftc` is missing the installer skips the app
-and says so, because the CLI works without it.
+It's compiled on your machine from `Sources/` with `swift build` (a minute the first time)
+and ad-hoc signed, so there's no Gatekeeper prompt. `xcode-select --install` is all it
+needs; if the Swift toolchain is missing the installer skips the app and says so, because
+the CLI works without it. Needs macOS 14 or later.
 
 ```bash
-goblin app rebuild          # after editing share/ui/panel.css or app/*.swift
+./build.sh                  # build "Merge Goblin.app" into build/ without installing
+./build.sh --dev            # a separate "Merge Goblin Dev" that runs next to your real one
+goblin app rebuild          # rebuild and swap the installed app (from a git checkout)
 goblin app status           # bundle, login item, whether it's running
 ```
 
 ## Use
 
-Most people only need the menu bar app. There's also a browser panel, which is
-the fallback if the app won't build:
-
-```bash
-goblin ui                   # the browser panel on 127.0.0.1
-```
-
-Everything is adjustable there: the on/off switch, snooze, which subscription
-reviews, model, spend caps, repos, teammates, verdict policy, notifications, plus
-a health check with a one-click **Fix** button and your review history.
+Most people only need the menu bar app: **⌥⌘G** to review a PR, the popover to see what's
+waiting, **Settings** for everything else — the on/off switch, snooze, which
+subscription reviews, model, spend caps, repos, teammates, verdict policy, notifications,
+a health check with one-click **Fix**, and your review history. `goblin ui` brings it forward.
 
 The CLI does the same things, if you prefer:
 
@@ -219,8 +237,8 @@ State lives in `~/.goblin/`: `config.json`, `events.jsonl` (history and spend), 
 
 ## Notes
 
-- **macOS only** (uses `launchd`). Bash 3.2 + `jq`. The optional control panel uses
-  the `python3` that ships with Xcode's command line tools — no packages to install.
+- **macOS only** (uses `launchd`; the app needs macOS 14+). The engine is Bash 3.2 + `jq` +
+  `gh`; the app is Swift with no third-party packages.
 - **He posts under your GitHub account.** Subscription CLIs have no bot identity, so every
   artifact is labelled and disclaims being your review. He never approves or requests
   changes unless you explicitly opt in twice.
@@ -234,15 +252,20 @@ State lives in `~/.goblin/`: `config.json`, `events.jsonl` (history and spend), 
 
 ```bash
 ./tests/run.sh            # offline: fake gh/claude/launchctl, no network, no cost
-shellcheck bin/goblin lib/*.sh lib/providers/*.sh
-GOBLIN_HOME=/tmp/gtest ./install.sh --non-interactive --no-agent --no-app --home /tmp/gtest
-goblin ui --no-open --port 8790     # panel without launching a browser
-goblin ui --stop                   # shut a running panel down
+swift test                # the app's own tests: PR refs, the command allowlist, job state
+bash -n lib/*.sh bin/goblin
+./build.sh --dev          # build the app; scripts/demo-home.sh makes a throwaway home to point it at
+GOBLIN_HOME=/tmp/gtest ./install.sh --non-interactive --no-agent --no-menu --home /tmp/gtest
 ```
 
-The panel is `share/ui/app.html` (one file, no framework) served by
-`share/ui/server.py` (stdlib only). Every button shells out to the `goblin` CLI, so
-there is exactly one implementation of every action.
+The app never builds a shell command. Everything it can ask the engine for is a case of the
+closed `Command` enum in `Sources/Goblin/Core/Command.swift`, which builds the argv and
+refuses anything it did not name — so there is one implementation of every action, and no
+free-form string can become a flag. There is deliberately no "set any config key" case.
+
+`Sources/Goblin/Core` has no AppKit in it and is what the tests import; `App/` owns state
+and windows; `Views/` is SwiftUI. Run `GoblinBar --snapshot <dir>` against a demo home to render
+every screen to PNG without a window server.
 
 Adding a provider is one file in `lib/providers/` implementing `probe` and `review`.
 Renaming him is one file: `lib/brand.sh`.

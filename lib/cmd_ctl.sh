@@ -82,7 +82,18 @@ cmd_ctl() {
       local sub="${1:-which}"; shift 2>/dev/null || true
       . "$LIB_DIR/providers.sh"
       case "$sub" in
-        list)  providers_report ;;
+        list)
+          # The app asks for --json (and --refresh); the text report ignored both, the
+          # app could not parse it, and the panel said "no AI CLIs found" with three
+          # of them installed and signed in. Probes are live — there is no cache to
+          # refresh — so --refresh is accepted and means nothing.
+          case "${1:-}" in
+            --json|--refresh)
+              providers_probe_all | jq -c --arg cur "$(cfg_get '.provider' claude)" \
+                --argjson models "$(cfg_get_json '.providers | with_entries(.value |= (.model // ""))' '{}')" \
+                'map(. + {current: (.name == $cur), model: ($models[.name] // "")})' ;;
+            *) providers_report ;;
+          esac ;;
         use)   providers_set "$1" ;;
         which|"") echo "$(cfg_get '.provider' claude) ($(cfg_get ".providers.$(cfg_get '.provider' claude).model" 'default model'))" ;;
         *) echo "usage: $GOBLIN_SLUG provider [list|use <id>|which]" >&2; return 2 ;;
