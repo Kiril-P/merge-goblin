@@ -1,0 +1,119 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Merge Goblin app icon. Full colour; the squircle is part of the artwork (Big Sur style, 100px margin). -->
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="38%" r="75%">
+      <stop offset="0" stop-color="#1e7a46"/>
+      <stop offset="0.55" stop-color="#0d3a22"/>
+      <stop offset="1" stop-color="#04120a"/>
+    </radialGradient>
+    <linearGradient id="skin" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#b6f07a"/>
+      <stop offset="0.5" stop-color="#6fcf4a"/>
+      <stop offset="1" stop-color="#2f8a34"/>
+    </linearGradient>
+    <linearGradient id="ear" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8fe35c"/>
+      <stop offset="1" stop-color="#2c7f31"/>
+    </linearGradient>
+    <linearGradient id="hood" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6a3fb0"/>
+      <stop offset="1" stop-color="#25123f"/>
+    </linearGradient>
+    <radialGradient id="eye" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.35" stop-color="#eaff5c"/>
+      <stop offset="1" stop-color="#a6ff2e"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#b8ff3c" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#b8ff3c" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="mglow" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#6dffa0" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#6dffa0" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="shade" cx="50%" cy="30%" r="70%">
+      <stop offset="0.6" stop-color="#000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000" stop-opacity="0.35"/>
+    </radialGradient>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.16"/>
+      <stop offset="0.45" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7dffb0" stop-opacity="0.55"/>
+      <stop offset="0.5" stop-color="#7dffb0" stop-opacity="0.05"/>
+      <stop offset="1" stop-color="#000" stop-opacity="0.4"/>
+    </linearGradient>
+  </defs>
+
+  <!-- tile -->
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#bg)"/>
+
+  <!-- a git graph, faint, behind him: branches converging into one line -->
+  <g fill="none" stroke="#35c46f" stroke-opacity="0.22" stroke-width="14" stroke-linecap="round">
+    <path d="M190 880 C190 760 250 700 250 600 L250 330"/>
+    <path d="M834 880 C834 760 774 700 774 600 L774 330"/>
+    <path d="M512 920 L512 840"/>
+  </g>
+  <g fill="#35c46f" fill-opacity="0.28">
+    <circle cx="250" cy="330" r="22"/><circle cx="774" cy="330" r="22"/>
+    <circle cx="250" cy="600" r="16"/><circle cx="774" cy="600" r="16"/>
+  </g>
+
+  <!-- him, a touch smaller so the ears stay inside the tile -->
+  <g transform="translate(512 548) scale(0.88) translate(-512 -560)">
+  <ellipse cx="512" cy="846" rx="230" ry="26" fill="#000" fill-opacity="0.35"/>
+  <!-- ears -->
+  <path d="M352 520 C282 505 170 462 78 340 C112 470 160 560 258 636 C300 660 346 652 372 618 Z" fill="url(#ear)"/>
+  <path d="M672 520 C742 505 854 462 946 340 C912 470 864 560 766 636 C724 660 678 652 652 618 Z" fill="url(#ear)"/>
+  <path d="M338 548 C268 520 190 470 130 396 C170 500 214 566 288 618 Z" fill="#1d5a24" fill-opacity="0.55"/>
+  <path d="M686 548 C756 520 834 470 894 396 C854 500 810 566 736 618 Z" fill="#1d5a24" fill-opacity="0.55"/>
+
+  <!-- head -->
+  <path d="M322 500 C322 392 410 340 512 340 C614 340 702 392 702 500 L706 604 C708 716 628 800 512 836 C396 800 316 716 318 604 Z" fill="url(#skin)"/>
+  <path d="M322 500 C322 392 410 340 512 340 C614 340 702 392 702 500 L706 604 C708 716 628 800 512 836 C396 800 316 716 318 604 Z" fill="url(#shade)"/>
+
+  <!-- hood -->
+  <path d="M296 548 C262 372 380 232 512 196 C560 226 644 262 728 548 C690 456 622 416 512 416 C402 416 334 456 296 548 Z" fill="url(#hood)"/>
+  <path d="M512 196 C560 226 644 262 728 548 C700 470 660 426 618 404 C650 340 600 252 512 196 Z" fill="#000" fill-opacity="0.22"/>
+  <path d="M296 548 C334 456 402 416 512 416 C622 416 690 456 728 548" fill="none" stroke="#a97dff" stroke-opacity="0.45" stroke-width="7" stroke-linecap="round"/>
+
+  <!-- the merge mark, glowing on the hood -->
+  <circle cx="512" cy="344" r="104" fill="url(#mglow)"/>
+  <g fill="none" stroke="#7dffb0" stroke-width="15" stroke-linecap="round">
+    <path d="M462 292 C462 336 512 332 512 372"/>
+    <path d="M562 292 C562 336 512 332 512 372"/>
+  </g>
+  <g fill="#c9ffe0"><circle cx="462" cy="290" r="19"/><circle cx="562" cy="290" r="19"/><circle cx="512" cy="378" r="19"/></g>
+  <g fill="none" stroke="#06301a" stroke-width="7"><circle cx="462" cy="290" r="19"/><circle cx="562" cy="290" r="19"/><circle cx="512" cy="378" r="19"/></g>
+
+  <!-- brows -->
+  <path d="M352 506 L496 548 L488 574 L344 540 Z" fill="#164a1c"/>
+  <path d="M672 506 L528 548 L536 574 L680 540 Z" fill="#164a1c"/>
+
+  <!-- eyes: glow, almond, slit pupil -->
+  <circle cx="424" cy="578" r="86" fill="url(#glow)"/>
+  <circle cx="600" cy="578" r="86" fill="url(#glow)"/>
+  <path d="M356 574 C392 548 452 554 490 592 C448 616 388 616 356 574 Z" fill="url(#eye)"/>
+  <path d="M668 574 C632 548 572 554 534 592 C576 616 636 616 668 574 Z" fill="url(#eye)"/>
+  <path d="M428 556 L440 600 L428 612 L416 600 Z" fill="#0a2410"/>
+  <path d="M596 556 L608 600 L596 612 L584 600 Z" fill="#0a2410"/>
+
+  <!-- nose -->
+  <path d="M512 596 L540 668 L484 668 Z" fill="#2c7a2f" fill-opacity="0.85"/>
+  <path d="M512 596 L540 668 L524 668 Z" fill="#1b5a22" fill-opacity="0.6"/>
+
+  <!-- grin with fangs -->
+  <path d="M372 690 C440 760 584 760 652 690 C612 716 412 716 372 690 Z" fill="#071a0d"/>
+  <path d="M372 690 C440 748 584 748 652 690 C600 700 424 700 372 690 Z" fill="#0b2713"/>
+  <path d="M432 712 L452 764 L474 722 Z" fill="#fffdf0"/>
+  <path d="M592 712 L572 764 L550 722 Z" fill="#fffdf0"/>
+  <path d="M498 724 L512 748 L526 724 Z" fill="#fffdf0" fill-opacity="0.9"/>
+
+  </g>
+
+  <!-- tile rim light and gloss -->
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#gloss)"/>
+  <rect x="103" y="103" width="818" height="818" rx="183" fill="none" stroke="url(#edge)" stroke-width="6"/>
+</svg>

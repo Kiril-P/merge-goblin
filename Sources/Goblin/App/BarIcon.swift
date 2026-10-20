@@ -148,35 +148,39 @@ enum BarIcon {
     // to say "goblin" at 18 points.
 
     private static func fallbackGoblin(in rect: NSRect) -> NSBezierPath {
-        // Design space is 64x64 with y pointing DOWN, matching share/ui/goblin.svg
-        // and the generator that produced goblin-bar.pdf, so the two shapes agree.
+        // Design space is 64x64 with y pointing DOWN: the same numbers as
+        // design/goblin-bar.svg, which is what goblin-bar.pdf is made from.
         let path = NSBezierPath()
         func p(_ x: CGFloat, _ y: CGFloat) -> NSPoint {
             NSPoint(x: rect.minX + (x / 64.0) * rect.width,
                     y: rect.maxY - (y / 64.0) * rect.height)
         }
 
-        path.move(to: p(32, 56))
-        path.curve(to: p(13.5, 33), controlPoint1: p(20, 56), controlPoint2: p(12, 47))
-        path.line(to: p(6, 17))                    // left ear
-        path.line(to: p(12.5, 25))
-        path.curve(to: p(51.5, 25), controlPoint1: p(14, 5), controlPoint2: p(50, 5))
-        path.line(to: p(58, 17))                   // right ear
-        path.line(to: p(50.5, 33))
-        path.curve(to: p(32, 56), controlPoint1: p(52, 47), controlPoint2: p(44, 56))
+        path.move(to: p(32, 2))
+        path.curve(to: p(49.5, 26), controlPoint1: p(39, 6), controlPoint2: p(47, 13))
+        path.line(to: p(63, 17))                   // right ear
+        path.curve(to: p(50.5, 42), controlPoint1: p(61, 31), controlPoint2: p(56, 39))
+        path.curve(to: p(32, 61), controlPoint1: p(49, 53), controlPoint2: p(42, 61))
+        path.curve(to: p(13.5, 42), controlPoint1: p(22, 61), controlPoint2: p(15, 53))
+        path.curve(to: p(1, 17), controlPoint1: p(8, 39), controlPoint2: p(3, 31))   // left ear
+        path.line(to: p(14.5, 26))
+        path.curve(to: p(32, 2), controlPoint1: p(17, 13), controlPoint2: p(25, 6))
         path.close()
 
         // Eyes and grin are holes, punched by the even-odd rule. The outline above
         // is one non-self-intersecting subpath precisely so that works.
-        path.appendOval(in: NSRect(x: p(23, 34).x - rect.width * 0.072,
-                                   y: p(23, 34).y - rect.height * 0.072,
-                                   width: rect.width * 0.144, height: rect.height * 0.144))
-        path.appendOval(in: NSRect(x: p(41, 34).x - rect.width * 0.072,
-                                   y: p(41, 34).y - rect.height * 0.072,
-                                   width: rect.width * 0.144, height: rect.height * 0.144))
-        path.move(to: p(21, 44))
-        path.curve(to: p(43, 44), controlPoint1: p(26, 52.5), controlPoint2: p(38, 52.5))
-        path.curve(to: p(21, 44), controlPoint1: p(38, 47.5), controlPoint2: p(26, 47.5))
+        for flip in [false, true] {
+            func x(_ v: CGFloat) -> CGFloat { flip ? 64 - v : v }
+            path.move(to: p(x(16.5), 30.5))
+            path.line(to: p(x(29), 35.5))
+            path.line(to: p(x(27.5), 39.5))
+            path.curve(to: p(x(16.5), 30.5), controlPoint1: p(x(22.5), 40), controlPoint2: p(x(18.5), 37))
+            path.close()
+        }
+        path.move(to: p(19, 45.5))
+        path.line(to: p(45, 45.5))
+        path.curve(to: p(32, 55), controlPoint1: p(44, 52.5), controlPoint2: p(38.5, 55))
+        path.curve(to: p(19, 45.5), controlPoint1: p(25.5, 55), controlPoint2: p(20, 52.5))
         path.close()
 
         path.windingRule = .evenOdd
