@@ -721,6 +721,189 @@ test_engine_queue_is_oldest_first() {
   eq '[9,3]' "$out" || return 1
 }
 
+
+# --------------------------------------------------------- review by number ---
+test_ref_parse() {
+  setup
+  . "$ROOT/lib/jobs.sh"; . "$ROOT/lib/review.sh"
+  eq "|2456"                 "$(ref_parse 2456)"                                   || return 1
+  eq "|2456"                 "$(ref_parse '#2456')"                                || return 1
+  eq "|2456"                 "$(ref_parse '  2456 ')"                              || return 1
+  eq "acme/widgets|2456"     "$(ref_parse 'acme/widgets#2456')"                    || return 1
+  eq "acme/widgets|2456"     "$(ref_parse 'https://github.com/acme/widgets/pull/2456')"          || return 1
+  eq "acme/widgets|2456"     "$(ref_parse 'https://github.com/acme/widgets/pull/2456/files?x=1#y')" || return 1
+  ref_parse ""               && return 1
+  ref_parse "abc"            && return 1
+  ref_parse "0"              && return 1
+  ref_parse "-5"             && return 1
+  ref_parse "123456789"      && return 1     # no PR has eight digits; this is a typo or an attack
+  ref_parse 'a b/c#1'        && return 1
+  ref_parse 'acme/widgets#1; rm -rf /' && return 1
+  ref_parse 'https://github.com/acme/widgets/issues/5' && return 1
+  teardown
+}
+
+test_ref_repo_resolution() {
+  setup
+  . "$ROOT/lib/jobs.sh"; . "$ROOT/lib/review.sh"
+  cd "$GOBLIN_HOME" || return 1             # not a git repo, so no cwd repo
+  eq "from/ref"  "$(ref_repo_resolve from/ref flag/x)" || return 1   # the ref's own repo wins
+  eq "flag/x"    "$(ref_repo_resolve '' flag/x)"       || return 1
+  ref_repo_resolve '' ''; eq 3 "$?"                    || return 1   # nothing to go on
+  cfg_repo_add one/only
+  eq "one/only"  "$(ref_repo_resolve '' '')"           || return 1   # a single watched repo
+  cfg_repo_add two/more
+  ref_repo_resolve '' ''; eq 3 "$?"                    || return 1   # two: ambiguous again
+  cfg_set '.lastRepo = "two/more"'
+  eq "two/more"  "$(ref_repo_resolve '' '')"           || return 1
+  ref_repo_resolve '' 'not a repo'; eq 2 "$?"          || return 1
+  teardown
+}
+
+# Runs the real CLI against a throwaway home with the fake gh and fake model first on
+# PATH. Prints nothing; assertions read $GOBLIN_HOME and $REVIEW_FAKE_*.
+review_env() {
+  GOBLIN_HOME="$(mktemp -d)"; export GOBLIN_HOME
+  export GOBLIN_APP="$ROOT"
+  export GOBLIN_PATH_FIRST="$ROOT/tests/fixtures/review/bin:$ROOT/tests/fixtures/bin"
+  export REVIEW_FAKE_LOG="$GOBLIN_HOME/gh.log" REVIEW_FAKE_POSTED="$GOBLIN_HOME/posted.json"
+  unset REVIEW_FAKE_STATE REVIEW_FAKE_HEAD REVIEW_FAKE_PRIOR CLAUDE_FAKE_SLOW
+  : > "$REVIEW_FAKE_LOG"
+  mkdir -p "$GOBLIN_HOME/repos"; git init -q "$GOBLIN_HOME/repos/acme_widgets"
+  cat > "$GOBLIN_HOME/config.json" <<JSON
+{"schemaVersion":2,"identity":{"githubLogin":"me"},"provider":"claude","setupComplete":true,
+ "repos":[{"slug":"acme/widgets","enabled":true},{"slug":"acme/other","enabled":true}]}
+JSON
+  G="$ROOT/bin/goblin"
+}
+review_env_done() { rm -rf "$GOBLIN_HOME"; unset GOBLIN_PATH_FIRST; }
+review_job_id() { ls "$GOBLIN_HOME/jobs" | head -1; }
+
+test_review_preview_posts_nothing() {
+  review_env
+  "$G" review 2456 --repo acme/widgets >/dev/null 2>&1; local rc=$?
+  eq 0 "$rc" || return 1
+  local id; id="$(review_job_id)"
+  eq "ready" "$(jq -r .phase "$GOBLIN_HOME/jobs/$id/job.json")" || return 1
+  grep -q 'POST .*reviews\|-X POST repos/acme/widgets/pulls/2456/reviews' "$REVIEW_FAKE_LOG" && { echo "a preview posted to GitHub"; return 1; }
+  [ -s "$REVIEW_FAKE_POSTED" ] && { echo "a preview posted to GitHub"; return 1; }
+  eq 2 "$(jq '.findings | length' "$GOBLIN_HOME/jobs/$id/preview/review.json")" || return 1
+  eq "true" "$(jq -r '.findings[0].anchored' "$GOBLIN_HOME/jobs/$id/preview/review.json")" || return 1
+  # not in the ledger: a preview must not make the scheduler think it was reviewed
+  [ -s "$GOBLIN_HOME/ledger" ] && { echo "preview wrote the ledger"; return 1; }
+  # but the spend is recorded, once
+  eq "0.25" "$(jq -s '[.[] | .costUsd] | add' "$GOBLIN_HOME/events.jsonl")" || return 1
+  eq "acme/widgets" "$(jq -r .lastRepo "$GOBLIN_HOME/config.json")" || return 1
+  review_env_done
+}
+
+test_review_post_applies_edits_and_does_not_double_count() {
+  review_env
+  "$G" review 2456 --repo acme/widgets >/dev/null 2>&1
+  local id nit; id="$(review_job_id)"
+  nit="$(jq -r '.findings[] | select(.severity=="nit") | .id' "$GOBLIN_HOME/jobs/$id/preview/review.json")"
+  jq -nc --arg n "$nit" '{drop:[$n], summary:"Edited summary."}' > "$GOBLIN_HOME/edits.json"
+  "$G" post "$id" --edits "$GOBLIN_HOME/edits.json" >/dev/null 2>&1; eq 0 "$?" || return 1
+  eq "done" "$(jq -r .phase "$GOBLIN_HOME/jobs/$id/job.json")" || return 1
+  eq 1 "$(jq '.comments | length' "$REVIEW_FAKE_POSTED")" || return 1
+  jq -r .body "$REVIEW_FAKE_POSTED" | grep -q 'Edited summary' || { echo "summary edit lost"; return 1; }
+  eq "COMMENT" "$(jq -r .event "$REVIEW_FAKE_POSTED")" || return 1
+  grep -qxF "2456:aaaaaaa1111111" "$GOBLIN_HOME/ledger" || { echo "not in the ledger after posting"; return 1; }
+  eq "0.25" "$(jq -s '[.[] | .costUsd] | add' "$GOBLIN_HOME/events.jsonl")" || return 1
+  review_env_done
+}
+
+test_review_post_rejects_a_bad_edit_file() {
+  review_env
+  "$G" review 2456 --repo acme/widgets >/dev/null 2>&1
+  local id; id="$(review_job_id)"
+  echo '{"edit":{"x":{"severity":"catastrophic"}}}' > "$GOBLIN_HOME/edits.json"
+  "$G" post "$id" --edits "$GOBLIN_HOME/edits.json" >/dev/null 2>&1; eq 2 "$?" || return 1
+  echo '{"nope":1}' > "$GOBLIN_HOME/edits.json"
+  "$G" post "$id" --edits "$GOBLIN_HOME/edits.json" >/dev/null 2>&1; eq 2 "$?" || return 1
+  [ -s "$REVIEW_FAKE_POSTED" ] && { echo "posted despite a bad edit file"; return 1; }
+  eq "ready" "$(jq -r .phase "$GOBLIN_HOME/jobs/$id/job.json")" || return 1   # still waiting, not lost
+  review_env_done
+}
+
+test_review_skips_what_is_already_reviewed_unless_forced() {
+  review_env
+  export REVIEW_FAKE_PRIOR="aaaaaaa1111111"
+  "$G" review 2456 --repo acme/widgets >/dev/null 2>&1
+  local id; id="$(review_job_id)"
+  eq "skipped" "$(jq -r .phase "$GOBLIN_HOME/jobs/$id/job.json")"          || return 1
+  eq "already_reviewed" "$(jq -r .reason "$GOBLIN_HOME/jobs/$id/job.json")" || return 1
+  "$G" review 2456 --repo acme/widgets --force >/dev/null 2>&1
+  eq 2 "$(ls "$GOBLIN_HOME/jobs" | wc -l | tr -d ' ')" || return 1
+  local ready; ready="$("$G" jobs --json | jq -r '[.[] | select(.phase=="ready")] | length')"
+  eq 1 "$ready" || return 1
+  review_env_done
+}
+
+test_review_closed_pr_is_skipped() {
+  review_env
+  export REVIEW_FAKE_STATE=closed
+  "$G" review 2456 --repo acme/widgets >/dev/null 2>&1
+  eq "skipped" "$(jq -r .phase "$GOBLIN_HOME/jobs/$(review_job_id)/job.json")" || return 1
+  review_env_done
+}
+
+test_review_needs_a_repo_when_ambiguous() {
+  review_env
+  cd "$GOBLIN_HOME" || return 1
+  local out; out="$("$G" review 2456 --json 2>/dev/null)"; eq 3 "$?" || return 1
+  eq "needs_repo" "$(printf '%s' "$out" | jq -r .error)" || return 1
+  eq '["acme/other","acme/widgets"]' "$(printf '%s' "$out" | jq -c '.candidates | sort')" || return 1
+  [ -d "$GOBLIN_HOME/jobs" ] && [ -n "$(ls "$GOBLIN_HOME/jobs")" ] && { echo "created a job it could not run"; return 1; }
+  review_env_done
+}
+
+test_run_pr_never_fans_out_across_repos() {
+  # `goblin run --pr 2456` used to review #2456 in EVERY watched repo.
+  review_env
+  cd "$GOBLIN_HOME" || return 1
+  "$G" run --pr 2456 >/dev/null 2>&1; eq 2 "$?" || return 1
+  grep -q 'pulls/2456' "$REVIEW_FAKE_LOG" && { echo "touched a PR despite not knowing the repo"; return 1; }
+  review_env_done
+}
+
+test_review_cancel_stops_the_model_and_is_not_a_failure() {
+  review_env
+  export CLAUDE_FAKE_SLOW=60
+  local out id; out="$("$G" review 2456 --repo acme/widgets --detach --json 2>/dev/null)"
+  id="$(printf '%s' "$out" | jq -r .id)"
+  local i=0
+  while [ "$i" -lt 100 ] && [ "$(jq -r .phase "$GOBLIN_HOME/jobs/$id/job.json")" != "reviewing" ]; do sleep 0.2; i=$((i+1)); done
+  eq "reviewing" "$(jq -r .phase "$GOBLIN_HOME/jobs/$id/job.json")" || return 1
+  local pid; pid="$(jq -r .pid "$GOBLIN_HOME/jobs/$id/job.json")"
+  "$G" cancel "$id" >/dev/null 2>&1
+  eq "cancelled" "$(jq -r .phase "$GOBLIN_HOME/jobs/$id/job.json")" || return 1
+  kill -0 "$pid" 2>/dev/null && { echo "worker still running"; return 1; }
+  pgrep -f 'claude.*-p' >/dev/null 2>&1 && pgrep -f "$ROOT/tests/fixtures/review/bin/claude" >/dev/null 2>&1 && { echo "model still running"; return 1; }
+  grep -q '"failed"' "$GOBLIN_HOME/events.jsonl" 2>/dev/null && { echo "a cancel was recorded as a failure"; return 1; }
+  [ -s "$GOBLIN_HOME/attempts.json" ] && [ "$(jq 'length' "$GOBLIN_HOME/attempts.json")" != 0 ] && { echo "a cancel counted against the retry budget"; return 1; }
+  review_env_done
+}
+
+test_review_interrupted_job_is_reported_not_spun() {
+  review_env
+  mkdir -p "$GOBLIN_HOME/jobs/j1700000000-12345"
+  jq -nc '{id:"j1700000000-12345",repo:"acme/widgets",number:1,phase:"reviewing",pid:999999,createdAt:1700000000}' \
+    > "$GOBLIN_HOME/jobs/j1700000000-12345/job.json"
+  local out; out="$("$G" jobs --json)"
+  eq "failed"      "$(printf '%s' "$out" | jq -r '.[0].phase')" || return 1
+  eq "interrupted" "$(printf '%s' "$out" | jq -r '.[0].error')" || return 1
+  review_env_done
+}
+
+test_review_provider_override_is_not_persisted() {
+  review_env
+  "$G" review 2456 --repo acme/widgets --model opus-test >/dev/null 2>&1
+  eq "sonnet"  "$(jq -r '.providers.claude.model // "sonnet"' "$GOBLIN_HOME/config.json")" || return 1
+  eq "opus-test" "$(jq -r .model "$GOBLIN_HOME/jobs/$(review_job_id)/preview/meta.json")" || return 1
+  review_env_done
+}
+
 # ---------------------------------------------------------------- update ---
 test_update_version_compare() {
   setup
@@ -1291,6 +1474,19 @@ t "panel: csp forbids inline"            test_panel_csp_forbids_inline
 t "panel: no html injection sinks"       test_panel_has_no_html_injection_sinks
 t "app: build stages before swapping"    test_app_build_stages_before_swapping
 t "hygiene: no personal paths"           test_no_hardcoded_personal_paths
+
+t "review: ref parsing"                     test_ref_parse
+t "review: repo resolution"                 test_ref_repo_resolution
+t "review: preview posts nothing"           test_review_preview_posts_nothing
+t "review: post applies edits, no double count" test_review_post_applies_edits_and_does_not_double_count
+t "review: bad edit file is refused"        test_review_post_rejects_a_bad_edit_file
+t "review: skips already-reviewed unless forced" test_review_skips_what_is_already_reviewed_unless_forced
+t "review: closed PR is skipped"            test_review_closed_pr_is_skipped
+t "review: ambiguous bare number asks for a repo" test_review_needs_a_repo_when_ambiguous
+t "review: run --pr never fans out"         test_run_pr_never_fans_out_across_repos
+t "review: cancel is not a failure"         test_review_cancel_stops_the_model_and_is_not_a_failure
+t "review: interrupted job reported"        test_review_interrupted_job_is_reported_not_spun
+t "review: model override is not persisted" test_review_provider_override_is_not_persisted
 
 printf '\n  %s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -gt 0 ] && { printf '  failed:%b\n\n' "$FAILED"; exit 1; }

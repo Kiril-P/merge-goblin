@@ -41,13 +41,27 @@ goblin_default_config() {
   "update": { "notify": true, "checkEverySecs": 86400 },
   "maxReviewsPerDay": 20,
   "skipIfHumanReviewed": true,
+  "manualReviewMode": "preview",
+  "maxConcurrentJobs": 2,
+  "lastRepo": "",
   "setupComplete": false,
   "cache": { "reposTtlSecs": 3600 }
 }
 JSON
 }
 
-cfg_read() { cat "$CONFIG" 2>/dev/null; }
+# GOBLIN_CFG_OVERLAY is a JSON object merged over the file for THIS process only — how
+# a manual review runs with a different provider or model without touching the
+# config every other process reads. Writers (cfg_set) deliberately ignore it, so an
+# overlay can never be persisted by accident.
+cfg_read() {
+  if [ -n "${GOBLIN_CFG_OVERLAY:-}" ]; then
+    jq -c --argjson o "$GOBLIN_CFG_OVERLAY" '. * $o' "$CONFIG" 2>/dev/null
+  else
+    cat "$CONFIG" 2>/dev/null
+  fi
+}
+cfg_read_file() { cat "$CONFIG" 2>/dev/null; }
 
 cfg_ensure() {
   goblin_ensure_dirs
@@ -75,7 +89,7 @@ cfg_get_json() {
 cfg_set() {
   cfg_ensure
   local out
-  if out="$(cfg_read | jq "$@" 2>/dev/null)" && [ -n "$out" ]; then
+  if out="$(cfg_read_file | jq "$@" 2>/dev/null)" && [ -n "$out" ]; then
     printf '%s\n' "$out" > "$CONFIG.tmp" && mv "$CONFIG.tmp" "$CONFIG"
   else
     rm -f "$CONFIG.tmp" 2>/dev/null

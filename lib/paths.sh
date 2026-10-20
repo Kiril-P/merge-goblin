@@ -20,6 +20,8 @@ INBOX="$GOBLIN_HOME/inbox.json"         # waiting-PR counts for the menu bar; se
 LOCKDIR="$GOBLIN_HOME/.lock"
 REPOS_DIR="$GOBLIN_HOME/repos"          # scratch clones: repos/<owner>__<name>
 RUNTMP="$GOBLIN_HOME/tmp"
+JOBS_DIR="$GOBLIN_HOME/jobs"            # one directory per manual review; see jobs.sh
+LOCKS_DIR="$GOBLIN_HOME/locks"          # per-repo and per-slot locks; see jobs.sh
 
 # GOBLIN_APP is the installed copy of the application (bin/ lib/ share/ templates/).
 # install.sh copies the repo here deliberately: launchd cannot read ~/Documents
@@ -50,7 +52,7 @@ AGENT_PLIST="$HOME/Library/LaunchAgents/${AGENT_LABEL}.plist"
 
 
 goblin_ensure_dirs() {
-  mkdir -p "$GOBLIN_HOME" "$REPOS_DIR" "$RUNTMP" 2>/dev/null || true
+  mkdir -p "$GOBLIN_HOME" "$REPOS_DIR" "$RUNTMP" "$JOBS_DIR" "$LOCKS_DIR" 2>/dev/null || true
   # 700, not 755: this directory holds PR titles, spend history and raw model
   # output under last-failure/. On a shared Mac every other user could read it.
   chmod 700 "$GOBLIN_HOME" 2>/dev/null || true

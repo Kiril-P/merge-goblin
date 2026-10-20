@@ -173,5 +173,27 @@ prompt_build() {
     printf '\n```\n\n'
   } >> "$out"
 
+  prompt_focus >> "$out"
   cat "$SHARE_DIR/prompt/50-contract.md" >> "$out"
+}
+
+# prompt_focus — the optional narrowing a person asked for on a manual review.
+# Only ever appended AFTER the repo's own rules and BEFORE the output contract, so a
+# focus can narrow what is reported but cannot loosen the contract or the repo's
+# standards.
+prompt_focus() {
+  case "${GOBLIN_FOCUS:-full}" in
+    security)
+      printf '## Focus for this review\n\n'
+      printf 'This is a security pass. Report only findings that are a security weakness:\n'
+      printf 'injection, authn/authz gaps, secrets, unsafe deserialisation, SSRF, path\n'
+      printf 'traversal, unsafe crypto, missing validation at a trust boundary, data exposure.\n'
+      printf 'Do not report style, convention or nit findings. If there is nothing, return an\n'
+      printf 'empty findings list and say so in the summary.\n\n' ;;
+    summary)
+      printf '## Focus for this review\n\n'
+      printf 'This is a briefing, not an audit. Make the summary field thorough: what the change\n'
+      printf 'does and why, how it is put together, what could go wrong, and a short test plan.\n'
+      printf 'Report findings only for real defects (blocker or risk); no nits or conventions.\n\n' ;;
+  esac
 }

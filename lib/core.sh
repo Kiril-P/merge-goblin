@@ -5,7 +5,11 @@
 
 # launchd hands us a minimal PATH. Include the usual homes for user-installed
 # CLIs (claude lives in ~/.local/bin, codex in /opt/homebrew/bin).
-export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$HOME/.local/bin:$HOME/bin:$PATH"
+#
+# GOBLIN_PATH_FIRST goes in front of all of it. It exists for the test suite: the
+# fixtures (fake gh, fake model CLI) must beat the real binaries in /opt/homebrew/bin
+# even in a child process that re-sources this file.
+export PATH="${GOBLIN_PATH_FIRST:+$GOBLIN_PATH_FIRST:}/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$HOME/.local/bin:$HOME/bin:$PATH"
 
 now_epoch()      { date +%s; }
 midnight_epoch() { date -v0H -v0M -v0S +%s; }

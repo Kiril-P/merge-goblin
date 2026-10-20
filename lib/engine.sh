@@ -16,8 +16,13 @@
 . "$LIB_DIR/update.sh"
 . "$LIB_DIR/attempts.sh"
 . "$LIB_DIR/inbox.sh"
+. "$LIB_DIR/jobs.sh"
 
 ONLY_PR=""; ONLY_REPO=""; DRY_RUN=false; FORCE=false; SCHEDULED=false
+# PREVIEW: run the whole review but stop before posting — the result is saved for a
+# person to read first (see engine_save_preview). Only manual jobs set it.
+PREVIEW=false
+GOBLIN_LAST_REVIEW_URL=""
 REVIEWS_THIS_RUN=0
 
 cmd_run() {
@@ -36,7 +41,16 @@ cmd_run() {
   # Only the scheduled path writes to the log file; interactive runs print.
   [ "$SCHEDULED" = true ] && log_open
 
-  if ! lock_acquire; then log "another run is active, exiting"; return 0; fi
+  if ! lock_acquire; then
+    log "another run is active, exiting"
+    # A scheduled cycle can safely skip; a person who asked for one PR cannot be left
+    # thinking it happened. `goblin review` has no such lock and runs alongside.
+    if [ -n "$ONLY_PR" ]; then
+      echo "goblin: a scheduled run is in progress. Use  goblin review $ONLY_PR  (runs alongside it) or try again in a minute." >&2
+      return 1
+    fi
+    return 0
+  fi
   trap 'claim_release; claim_release_comment; lock_release' EXIT INT TERM
 
   log "=== run start ${ONLY_PR:+(pr #$ONLY_PR) }${DRY_RUN:+}$([ "$DRY_RUN" = true ] && echo '(dry run)')"
@@ -59,6 +73,15 @@ cmd_run() {
   local slug repos
   repos="$(cfg_repos_enabled)"
   [ -n "$ONLY_REPO" ] && repos="$ONLY_REPO"
+  # A bare PR number means ONE pull request. Looping it over every watched repo would
+  # review whatever happens to share that number in each of them.
+  if [ -n "$ONLY_PR" ] && [ -z "$ONLY_REPO" ]; then
+    . "$LIB_DIR/review.sh"
+    if ! ref_resolve_or_fail "$ONLY_PR" "" false; then
+      lock_release; return 2
+    fi
+    repos="$REF_SLUG"; ONLY_PR="$REF_NUM"
+  fi
   if [ -z "$repos" ]; then
     log "no repos configured — run: goblin repos add owner/name"
     return 0
@@ -110,6 +133,9 @@ engine_gates() {
 # Checked before EVERY review, not just at run start — a backlog run used to
 # blow past the cap by 2x before the next cycle noticed.
 engine_budget_ok() {
+  # A review somebody asked for by number is not part of the unattended budget: the
+  # caps exist to stop a backlog running away, and this is one deliberate PR.
+  [ -n "$ONLY_PR" ] && return 0
   local cap spent max_run max_day done_today
   cap="$(cfg_get '.budgetCapUsd' 0)"
   max_run="$(cfg_get '.maxReviewsPerRun' 5)"
@@ -315,23 +341,42 @@ engine_pr() {
 }
 
 # --- the actual review ----------------------------------------------------
+# Serialised per repo: the scratch clone is shared and is reset --hard before every
+# checkout, which would pull the files out from under a model that is reading them.
 engine_review_pr() {
+  local slug="$2" rc
+  if ! repo_lock_acquire "$slug"; then
+    log "  #$2: could not get the repo lock for $slug"
+    return 1
+  fi
+  engine_review_pr_locked "$@"; rc=$?
+  repo_lock_release
+  return $rc
+}
+
+engine_review_pr_locked() {
   local slug="$1" pr="$2" head="$3" title="$4" url="$5" base="$6" provider="$7" last_sha="$8"
   local work="$RUNTMP/pr-$pr-$$"; rm -rf "$work"; mkdir -p "$work/raw"
 
   log "  #$pr: reviewing ($title)"
   status_set "$(jq -nc --arg a "reviewing #$pr — $title" '{state:"reviewing",activity:$a}')"
-  notify started "$GOBLIN_NAME is reviewing" "#$pr — $title"
-  [ "$DRY_RUN" != true ] && gh_status "$slug" "$head" pending "reviewing with $provider"
+  # A manual job has its own progress UI; a banner for something you just asked for
+  # is noise.
+  [ -z "$GOBLIN_JOB_ID" ] && notify started "$GOBLIN_NAME is reviewing" "#$pr — $title"
+  [ "$DRY_RUN" != true ] && [ "$PREVIEW" != true ] && gh_status "$slug" "$head" pending "reviewing with $provider"
 
   # 1. the diff, from GitHub (source of truth for what is commentable)
+  job_phase fetching
   if ! diff_fetch_files "$slug" "$pr" "$work/files.json"; then
-    log "  #$pr: no files returned"; rm -rf "$work"; return 1
+    log "  #$pr: no files returned"; rm -rf "$work"
+    job_phase failed '{"error":"no_files","errorDetail":"GitHub returned no changed files for this pull request."}'
+    return 1
   fi
   diff_addressable "$work/files.json" "$work/addr.json"
   diff_annotated  "$work/files.json" "$work/diff.txt" "$(cfg_get '.maxDiffBytes' 400000)"
 
   # 2. a checkout, so the model can read surrounding code
+  job_phase reading
   local repo_dir; repo_dir="$(goblin_repo_dir "$slug")"
   engine_checkout "$slug" "$pr" "$repo_dir" || log "  #$pr: no local checkout (reviewing from diff only)"
 
@@ -356,9 +401,13 @@ engine_review_pr() {
   fi
 
   # 5. run the model
+  job_phase reviewing
   if ! findings_run "$provider" "$work/prompt.txt" "${repo_dir:-$work}" "$work/norm.json" "$work/raw"; then
     local kind="${GOBLIN_P_ERRKIND:-other}"
     log "  #$pr: review failed ($kind) ${GOBLIN_P_ERRMSG:-}"
+    # A cancel kills the model mid-run, which surfaces here as an ordinary failure.
+    # It is not one: it must not be recorded, retried-around or notified.
+    if job_cancel_requested; then rm -rf "$work"; return 130; fi
     # Keep the evidence. Without this a failure is unreproducible — you'd have
     # to pay for another review just to see what the model actually said.
     rm -rf "$GOBLIN_HOME/last-failure"
@@ -369,6 +418,7 @@ engine_review_pr() {
     gh_status "$slug" "$head" error "review failed: $kind"
     attempt_record "${pr}:${head}" "$kind"
     status_set '{"state":"idle","activity":""}'
+    job_phase failed "$(jq -nc --arg k "$kind" --arg m "${GOBLIN_P_ERRMSG:-}" '{error:$k, errorDetail:$m}')"
     rm -rf "$work"; return 1
   fi
 
@@ -379,10 +429,65 @@ engine_review_pr() {
       "$work/norm.json" > "$work/norm2.json" 2>/dev/null && mv "$work/norm2.json" "$work/norm.json"
   fi
 
+  if [ "$PREVIEW" = true ]; then
+    engine_save_preview "$work" "$slug" "$pr" "$head" "$base" "$title" "$url" "$provider" "$prior_json"
+    local prc=$?
+    rm -rf "$work"
+    return $prc
+  fi
+
   engine_publish "$work" "$slug" "$pr" "$head" "$base" "$title" "$url" "$provider" "$prior_json"
   local rc=$?
   rm -rf "$work"
   return $rc
+}
+
+# engine_save_preview — everything `goblin post` needs to publish this review later,
+# plus one self-describing file (preview/review.json) for a person or the app to read.
+#
+# What is saved is the model's normalised output and the diff facts, not a rendered
+# body: the body is rebuilt at post time so that edits made in between (dropping a
+# finding, re-grading one) flow through the same renderer and the same verdict
+# policy as an unattended review. There is no second path that posts differently.
+engine_save_preview() {
+  local work="$1" slug="$2" pr="$3" head="$4" base="$5" title="$6" url="$7" provider="$8" prior_json="$9"
+  local model="${GOBLIN_P_MODEL:-$provider}" cost="${GOBLIN_P_COST_USD:-0}"
+  local out="${GOBLIN_JOB_DIR:-$GOBLIN_HOME/last-preview}/preview"
+  rm -rf "$out"; mkdir -p "$out" || return 1
+
+  diff_split_findings "$work/norm.json" "$work/addr.json" "$work/split.json"
+  cp "$work/norm.json" "$out/norm.json"
+  cp "$work/addr.json" "$out/addr.json"
+  cp "$work/files.json" "$out/files.json"
+  cp "$prior_json" "$out/prior.json" 2>/dev/null || echo '[]' > "$out/prior.json"
+  jq -nc --arg slug "$slug" --argjson pr "$pr" --arg head "$head" --arg base "$base" \
+     --arg title "$title" --arg url "$url" --arg provider "$provider" --arg model "$model" \
+     --argjson cost "${cost:-0}" '{slug:$slug, pr:$pr, head:$head, base:$base, title:$title,
+       url:$url, provider:$provider, model:$model, costUsd:$cost}' > "$out/meta.json"
+
+  # The file a human reads. `anchored` says whether GitHub will accept the comment on
+  # a diff line; the rest ride in the body, exactly as they would if posted unedited.
+  jq -n --slurpfile n "$work/norm.json" --slurpfile s "$work/split.json" \
+        --slurpfile m "$out/meta.json" --slurpfile f "$work/files.json" '
+    ($s[0].inline | map(.id)) as $inl
+    | $m[0] + {
+        summary: ($n[0].summary // ""),
+        intent: ($n[0].intent_note // null),
+        suggestedVerdict: ($n[0].suggested_verdict // "comment"),
+        files: ($f[0] | length),
+        additions: ([$f[0][].additions] | add // 0),
+        deletions: ([$f[0][].deletions] | add // 0),
+        findings: [ $n[0].findings[] | . + { anchored: (.id as $i | ($inl | index($i)) != null) } ]
+      }' > "$out/review.json"
+
+  local counts; counts="$(render_counts "$work/norm.json")"
+  events_append previewed "$pr" "$title" "$url" "$cost" "" "$slug" "$provider" "$model"
+  log "  #$pr: preview ready — $counts"
+  notify posted "$GOBLIN_NAME finished 👺" "#$pr is ready to read — $counts"
+  job_phase ready "$(jq -nc --arg c "$counts" --argjson n "$(jq '.findings|length' "$work/norm.json")" \
+    --argjson cost "${cost:-0}" '{result:{counts:$c, findings:$n, costUsd:$cost}}')"
+  status_set '{"state":"idle","activity":""}'
+  return 0
 }
 
 engine_publish() {
@@ -399,6 +504,7 @@ engine_publish() {
     notify failed "$GOBLIN_NAME failed ⚠️" "#$pr — review payload was incomplete"
     gh_status "$slug" "$head" error "review payload was incomplete"
     attempt_record "${pr}:${head}" "payload"
+    job_phase failed '{"error":"payload","errorDetail":"The review payload was incomplete, so nothing was posted."}'
     return 1
   fi
 
@@ -408,9 +514,11 @@ engine_publish() {
     log "  #$pr: merged or closed during the review — not posting"
     ledger_add "${pr}:${head}"
     status_set '{"state":"idle","activity":""}'
+    job_phase skipped '{"reason":"closed"}'
     return 0
   fi
 
+  job_phase posting
   local review_url
   if ! review_url="$(post_review "$slug" "$pr" "$work/review.json" "$work/err.json")"; then
     log "  #$pr: posting failed — $(head -c 200 "$work/err.json" 2>/dev/null)"
@@ -418,6 +526,7 @@ engine_publish() {
     notify failed "$GOBLIN_NAME failed ⚠️" "#$pr — could not post review"
     gh_status "$slug" "$head" error "could not post review"
     attempt_record "${pr}:${head}" "post"
+    job_phase failed '{"error":"post","errorDetail":"GitHub rejected the review."}'
     return 1
   fi
 
@@ -438,6 +547,9 @@ engine_publish() {
   counts="$(render_counts "$work/norm.json")"
   inline_n="$(jq '.inline | length' "$work/split.json")"
   gh_status "$slug" "$head" success "$counts · $model" "$review_url"
+  GOBLIN_LAST_REVIEW_URL="$review_url"
+  job_phase done "$(jq -nc --arg c "$counts" --arg u "$review_url" --argjson n "${inline_n:-0}" \
+    --argjson cost "${cost:-0}" '{result:{counts:$c, reviewUrl:$u, inline:$n, costUsd:$cost}}')"
 
   ledger_add "${pr}:${head}"
   attempt_clear "${pr}:${head}"
