@@ -96,6 +96,11 @@ struct JobRow: View {
                 } else if job.phase == .ready {
                     // the counts get a line of their own: squeezed next to three buttons
                     // they were cut down to "1…"
+                    if !job.heldBecause.isEmpty {
+                        Label("Not posted: \(job.heldBecause)", systemImage: "hand.raised.fill")
+                            .font(.system(size: 11.5, weight: .medium)).foregroundStyle(Color(nsColor: .systemOrange))
+                            .padding(.leading, 26)
+                    }
                     if !job.counts.isEmpty { SeverityCounts(text: job.counts, size: 11.5).padding(.leading, 26) }
                     HStack(spacing: 8) {
                         Spacer()

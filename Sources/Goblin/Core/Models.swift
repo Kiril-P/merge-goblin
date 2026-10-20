@@ -107,6 +107,8 @@ struct Job: Identifiable, Equatable {
     var reviewURL: String
     var costUsd: Double
     var headChanged: Bool
+    /// Set when the scheduler held a review for a person instead of posting it.
+    var heldBecause: String
 
     var ref: String { "\(repo)#\(number)" }
     var shortRepo: String { repo.split(separator: "/").last.map(String.init) ?? repo }
@@ -136,6 +138,7 @@ struct Job: Identifiable, Equatable {
         reviewURL = json["result"]["reviewUrl"].string("")
         costUsd = json["result"]["costUsd"].double(0)
         headChanged = json["headChanged"].bool(false)
+        heldBecause = json["heldBecause"].string("")
     }
 
     /// A job whose worker is gone but whose file still says it is working was killed
@@ -441,6 +444,7 @@ struct Snapshot: Equatable {
         var skipIfHumanReviewed = true
         var refutePass = true
         var manualReviewMode = "preview"
+        var autoPost = "always"
         var maxConcurrentJobs = 2
         var lastRepo = ""
         var notifyStarted = true
@@ -518,6 +522,7 @@ struct Snapshot: Equatable {
         st.skipIfHumanReviewed = s["skipIfHumanReviewed"].bool(true)
         st.refutePass = s["refutePass"].bool(true)
         st.manualReviewMode = s["manualReviewMode"].string("preview")
+        st.autoPost = s["autoPost"].string("always")
         st.maxConcurrentJobs = s["maxConcurrentJobs"].int(2)
         st.lastRepo = s["lastRepo"].string("")
         st.notifyStarted = s["notify"]["started"].bool(true)
@@ -539,4 +544,24 @@ struct DoctorCheck: Identifiable, Equatable {
     let check: String
     let detail: String
     let fix: String
+}
+
+/// What the scheduler does with a review nobody asked for by hand.
+enum AutoPost: String, CaseIterable, Identifiable {
+    case always, safe, never
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .always: return "Post them"
+        case .safe: return "Post when safe"
+        case .never: return "Hold for me"
+        }
+    }
+    var hint: String {
+        switch self {
+        case .always: return "Every review he does on his own is posted straight away."
+        case .safe: return "Posted on its own unless it has a blocker or the change looks high-risk; those wait in Ready to read."
+        case .never: return "He finds and prepares the reviews; each one waits in Ready to read until you post it."
+        }
+    }
 }

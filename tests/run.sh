@@ -1257,6 +1257,46 @@ J
   teardown
 }
 
+
+test_auto_post_policy_decides_what_waits() {
+  setup
+  . "$ROOT/lib/diff.sh" 2>/dev/null; . "$ROOT/lib/engine.sh" 2>/dev/null
+  local n="$GOBLIN_HOME/n.json"
+  echo '{"findings":[{"id":"a","severity":"risk"}],"assessment":{"risk":"low"}}' > "$n"
+  engine_should_hold "$n" && { echo "default must post as before"; return 1; }
+  cfg_set '.autoPost = "safe"'
+  engine_should_hold "$n" && { echo "safe review was held"; return 1; }
+  echo '{"findings":[{"id":"a","severity":"blocker"}]}' > "$n"
+  engine_should_hold "$n" || { echo "blocker not held"; return 1; }
+  echo '{"findings":[],"assessment":{"risk":"high"}}' > "$n"
+  engine_should_hold "$n" || { echo "high risk not held"; return 1; }
+  cfg_set '.autoPost = "never"'
+  echo '{"findings":[]}' > "$n"
+  engine_should_hold "$n" || { echo "never must hold everything"; return 1; }
+  teardown
+}
+
+test_a_held_review_waits_as_a_ready_job() {
+  setup
+  . "$ROOT/lib/diff.sh" 2>/dev/null; . "$ROOT/lib/engine.sh" 2>/dev/null
+  mk_fake_gh
+  local w="$GOBLIN_HOME/work"; mkdir -p "$w"
+  echo '{"summary":"s","findings":[{"id":"a","severity":"blocker","title":"t","body":"b","path":"f.sh","line":3}]}' > "$w/norm.json"
+  echo '[{"path":"f.sh","line":3,"side":"RIGHT"}]' > "$w/addr.json"
+  echo '[{"path":"f.sh","additions":1,"deletions":0}]' > "$w/files.json"
+  echo '{"author":"alice"}' > "$w/pr.json"; echo '[]' > "$GOBLIN_HOME/prior.json"
+  notify() { :; }
+  ENGINE_HOLD_WHY="it has a blocker"
+  engine_hold "$w" acme/widgets 7 abc123 main "T" "https://github.com/acme/widgets/pull/7" claude "$GOBLIN_HOME/prior.json" || return 1
+  eq "" "$GOBLIN_JOB_ID" || { echo "still inside the job afterwards"; return 1; }
+  local id; id="$(ls "$JOBS_DIR" | head -1)"
+  eq "ready" "$(job_get "$id" phase)"            || return 1
+  eq "it has a blocker" "$(job_get "$id" heldBecause)" || return 1
+  [ -f "$JOBS_DIR/$id/preview/review.json" ]    || { echo "no preview to post"; return 1; }
+  ledger_has "7:abc123" || { echo "not ledgered: the scheduler would review it again"; return 1; }
+  teardown
+}
+
 # ---------------------------------------------------------------- update ---
 test_update_version_compare() {
   setup
@@ -1601,6 +1641,7 @@ test_panel_contract_matches_the_app() {
       # keys the app supplies with values we cannot guess generically
       identity)        cmd_panel set "$k" someuser  >/dev/null 2>&1 || bad="$bad $k" ;;
       manual-mode)     cmd_panel set "$k" preview   >/dev/null 2>&1 || bad="$bad $k" ;;
+      auto-post)       cmd_panel set "$k" safe      >/dev/null 2>&1 || bad="$bad $k" ;;
       verdict-mode)    cmd_panel set "$k" comment   >/dev/null 2>&1 || bad="$bad $k" ;;
       provider-model)  cmd_panel set "$k" claude sonnet >/dev/null 2>&1 || bad="$bad $k" ;;
       allow-approve)   cmd_panel set "$k" false     >/dev/null 2>&1 || bad="$bad $k" ;;
@@ -1780,6 +1821,8 @@ t "cli: option missing its value returns"  test_an_option_missing_its_value_does
 t "refute: same provider, notes removals"  test_refute_notes_what_it_removed_and_stays_on_the_same_provider
 t "hygiene: jq programs compile"          test_jq_programs_compile
 t "post: no duplicate of a newer review"   test_post_refuses_a_duplicate_of_a_newer_review
+t "auto-post: policy decides what waits"  test_auto_post_policy_decides_what_waits
+t "auto-post: a held review waits as ready" test_a_held_review_waits_as_a_ready_job
 
 . "$ROOT/tests/stats_test.sh"
 t "stats: classifies our threads"          test_stats_classifies_our_threads

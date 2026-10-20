@@ -493,6 +493,17 @@ struct BehaviourPane: View {
     var body: some View {
         SettingsPage(title: "Behaviour", subtitle: "How the Goblin words his reviews, and what he leaves alone.") {
             verdictCards
+            SettingsGroup(title: "Reviews he does on his own") {
+                let current = AutoPost(rawValue: s.autoPost) ?? .always
+                SettingRow(title: "When one is ready", hint: current.hint, last: true) {
+                    Picker("", selection: Binding(
+                        get: { current },
+                        set: { new in Task { await store.perform(.setAutoPost(new)) } })) {
+                        ForEach(AutoPost.allCases) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.segmented).labelsHidden().fixedSize()
+                }
+            }
             SettingsGroup(title: "Approving") {
                 FlagRow(store: store, title: "Allow approving a clean PR",
                         hint: verdict == .full

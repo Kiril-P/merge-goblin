@@ -95,6 +95,11 @@ _panel_set() {
     max-jobs)
       out="$(_panel_int "$v" 1 8)"      || { echo "concurrent reviews must be 1-8" >&2; return 2; }
       cfg_set ".maxConcurrentJobs = $out" ;;
+    auto-post)
+      case "$v" in
+        always|safe|never) cfg_set --arg m "$v" '.autoPost = $m' ;;
+        *) echo "auto post must be always, safe or never" >&2; return 2 ;;
+      esac ;;
     manual-mode)
       case "$v" in
         preview|post) cfg_set --arg m "$v" '.manualReviewMode = $m' ;;

@@ -32,6 +32,7 @@ goblin_default_config() {
   "maxReviewsPerRun": 5,
   "maxFindings": 25,
   "refutePass": true,
+  "autoPost": "always",
   "gitTimeoutSecs": 120,
   "maxDiffBytes": 400000,
   "postIntentComment": true,

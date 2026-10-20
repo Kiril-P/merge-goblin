@@ -458,6 +458,14 @@ engine_review_pr_locked() {
     return $prc
   fi
 
+  # 7. an unattended review either posts, or waits for a person (autoPost)
+  if [ -z "${GOBLIN_JOB_ID:-}" ] && engine_should_hold "$work/norm.json"; then
+    engine_hold "$work" "$slug" "$pr" "$head" "$base" "$title" "$url" "$provider" "$prior_json"
+    local hrc=$?
+    rm -rf "$work"
+    return $hrc
+  fi
+
   engine_publish "$work" "$slug" "$pr" "$head" "$base" "$title" "$url" "$provider" "$prior_json"
   local rc=$?
   rm -rf "$work"
@@ -510,6 +518,66 @@ engine_save_preview() {
   job_phase ready "$(jq -nc --arg c "$counts" --argjson n "$(jq '.findings|length' "$work/norm.json")" \
     --argjson cost "${cost:-0}" '{result:{counts:$c, findings:$n, costUsd:$cost}}')"
   status_set '{"state":"idle","activity":""}'
+  return 0
+}
+
+# engine_should_hold <norm.json> — should this unattended review wait for a person?
+#   autoPost = always  post everything (the original behaviour)
+#              safe    post on its own only when nothing in it is a blocker and the
+#                      model did not rate the change high-risk; otherwise hold it
+#              never   hold every review: the scheduler finds and prepares, you post
+# Sets ENGINE_HOLD_WHY for the log and the notification.
+ENGINE_HOLD_WHY=""
+engine_should_hold() {
+  local norm="$1" policy
+  policy="$(cfg_get '.autoPost' always)"
+  case "$policy" in
+    never) ENGINE_HOLD_WHY="every review waits for you (Settings › Behaviour)"; return 0 ;;
+    safe)
+      if jq -e '[.findings[]? | select(.severity == "blocker")] | length > 0' "$norm" >/dev/null 2>&1; then
+        ENGINE_HOLD_WHY="it has a blocker"; return 0
+      fi
+      if jq -e '(.assessment.risk // "") == "high"' "$norm" >/dev/null 2>&1; then
+        ENGINE_HOLD_WHY="the change looks high-risk"; return 0
+      fi
+      return 1 ;;
+    *) return 1 ;;
+  esac
+}
+
+# engine_hold — turn an unattended review into a job waiting in "Ready to read",
+# exactly like a review asked for by number in preview mode: the same preview files,
+# the same Post / Discard, the same `goblin post`. The PR is ledgered, so the scheduler
+# does not review this commit again while it waits.
+#
+# With a fleet: nothing is posted while it waits, so after takeoverGraceSecs a
+# teammate's goblin may review the PR itself. Post or discard within the grace period.
+engine_hold() {
+  local work="$1" slug="$2" pr="$3" head="$4" base="$5" title="$6" url="$7" provider="$8" prior_json="$9"
+  local id dir author rc
+  id="$(job_new_id)"; dir="$(job_dir_of "$id")"
+  mkdir -p "$dir" || return 1
+  author="$(jq -r '.author // ""' "$work/pr.json" 2>/dev/null)"
+  job_write "$id" "$(jq -nc --arg id "$id" --arg repo "$slug" --argjson n "$pr" --arg t "$title" \
+    --arg u "$url" --arg prov "$provider" --arg model "${GOBLIN_P_MODEL:-}" --arg head "$head" \
+    --arg author "$author" --arg why "$ENGINE_HOLD_WHY" --argjson at "$(now_epoch)" \
+    '{id:$id, repo:$repo, number:$n, title:$t, url:$u, phase:"reviewing", mode:"preview",
+      origin:"scheduled", heldBecause:$why, provider:$prov, providerUsed:$prov, model:$model,
+      focus:"full", force:false, head:$head, author:$author, createdAt:$at}')" || return 1
+
+  GOBLIN_JOB_ID="$id"; GOBLIN_JOB_DIR="$dir"
+  engine_save_preview "$work" "$slug" "$pr" "$head" "$base" "$title" "$url" "$provider" "$prior_json"; rc=$?
+  # The scheduler goes on to other PRs in this same process: nothing after this may
+  # think it is still inside this job.
+  GOBLIN_JOB_ID=""; GOBLIN_JOB_DIR=""
+  [ "$rc" -eq 0 ] || return "$rc"
+
+  ledger_add "${pr}:${head}"
+  attempt_clear "${pr}:${head}" 2>/dev/null || true
+  REVIEWS_THIS_RUN=$((REVIEWS_THIS_RUN + 1))
+  gh_status "$slug" "$head" success "review ready — waiting for @${GOBLIN_LOGIN:-you} to post it" 2>/dev/null || true
+  log "  #$pr: held for you to read — $ENGINE_HOLD_WHY"
+  notify posted "$GOBLIN_NAME is holding #$pr 👺" "Not posted: $ENGINE_HOLD_WHY. Read it, then post or discard."
   return 0
 }
 

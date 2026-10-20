@@ -173,6 +173,7 @@ enum Command: Equatable {
     case setIntervalMinutes(Int)       // 1...1440
     case setMaxConcurrentJobs(Int)     // 1...8
     case setManualReviewMode(ReviewMode)
+    case setAutoPost(AutoPost)
 
     // review behaviour
     case setVerdictMode(VerdictMode)
@@ -291,6 +292,8 @@ enum Command: Equatable {
             return Command.panelSet("max-jobs", String(n))
         case .setManualReviewMode(let mode):
             return Command.panelSet("manual-mode", mode.rawValue)
+        case .setAutoPost(let p):
+            return Command.panelSet("auto-post", p.rawValue)
 
         case .setVerdictMode(let mode):
             return Command.panelSet("verdict-mode", mode.rawValue)

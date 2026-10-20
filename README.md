@@ -251,6 +251,7 @@ the review body and aren't counted.
 | `budgetCapUsd` | `10` | 0 = unlimited |
 | `maxReviewsPerRun` | `5` | |
 | `maxFindings` | `25` | |
+| `autoPost` | `always` | what the scheduler does with a finished review: `always` posts, `safe` holds anything with a blocker or rated high-risk, `never` holds everything for you to post from Ready to read |
 | `refutePass` | `true` | second, skeptical pass before an unattended review posts |
 | `gitTimeoutSecs` | `120` | cap on every clone / fetch the engine runs |
 | `fleet` | `[]` | teammates also running the Goblin |
