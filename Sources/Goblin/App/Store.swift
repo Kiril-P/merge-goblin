@@ -95,7 +95,10 @@ final class AppStore {
 
     /// A person's unsaved changes to each waiting review, by job id.
     var edits: [String: ReviewEdits] = [:]
-    private var previewCache: [String: ReviewPreview] = [:]
+    @ObservationIgnored private var previewCache: [String: ReviewPreview] = [:]
+    /// Jobs with a post in flight from this window. The engine only reports `posting`
+    /// once it has started, and a second click before that must not start a second post.
+    var postingJobs: Set<String> = []
 
     var cliConfigured: Bool { CLI.shared.isConfigured }
     var home: String { CLI.shared.home }
@@ -209,9 +212,8 @@ final class AppStore {
     }
 
     private func reloadHistory() {
-        guard let data = FileManager.default.contents(atPath: path("events.jsonl")),
-              data.count < 4 * 1024 * 1024,
-              let text = String(data: data, encoding: .utf8) else { history = []; return }
+        // Only the tail: events.jsonl only ever grows, and the list shows the last 80.
+        guard let text = Self.tail(path("events.jsonl"), bytes: 256 * 1024) else { history = []; return }
         var rows: [HistoryEntry] = []
         for line in text.split(separator: "\n", omittingEmptySubsequences: true).suffix(80) {
             let j = JSON.parse(String(line))
@@ -233,6 +235,19 @@ final class AppStore {
         }
         let next = Array(rows.reversed())
         if next != history { history = next }
+    }
+
+    nonisolated static func tail(_ file: String, bytes: Int) -> String? {
+        guard let h = FileHandle(forReadingAtPath: file) else { return nil }
+        defer { try? h.close() }
+        let size = (try? h.seekToEnd()) ?? 0
+        let start = size > UInt64(bytes) ? size - UInt64(bytes) : 0
+        try? h.seek(toOffset: start)
+        guard let data = try? h.readToEnd() else { return nil }
+        var text = String(decoding: data, as: UTF8.self)
+        // A cut in the middle of a line leaves a fragment; drop it.
+        if start > 0, let nl = text.firstIndex(of: "\n") { text = String(text[text.index(after: nl)...]) }
+        return text
     }
 
     /// The review waiting in jobs/<id>/preview, read once and cached. A job that is
@@ -274,15 +289,24 @@ final class AppStore {
         // only job files live under it (clones are under repos/, elsewhere).
         var ctx = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(),
                                        retain: nil, release: nil, copyDescription: nil)
-        let callback: FSEventStreamCallback = { _, info, _, _, _, _ in
+        let callback: FSEventStreamCallback = { _, info, count, paths, _, _ in
             guard let info else { return }
+            // A running worker appends to log.txt many times a second; only the files the
+            // UI actually reads (job.json, the preview) are worth a reload.
+            let list = unsafeBitCast(paths, to: NSArray.self)
+            var relevant = false
+            for i in 0..<count {
+                let p = (list[i] as? String) ?? ""
+                if p.hasSuffix("/job.json") || p.contains("/preview/") || p.hasSuffix("/edits.json") { relevant = true; break }
+            }
+            guard relevant else { return }
             let store = Unmanaged<AppStore>.fromOpaque(info).takeUnretainedValue()
             Task { @MainActor in store.scheduleReload() }
         }
         if let stream = FSEventStreamCreate(
             nil, callback, &ctx, [CLI.shared.jobsPath] as CFArray,
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 0.15,
-            FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer)) {
+            FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer | kFSEventStreamCreateFlagUseCFTypes)) {
             FSEventStreamSetDispatchQueue(stream, .main)
             FSEventStreamStart(stream)
             jobsStream = stream
@@ -295,7 +319,10 @@ final class AppStore {
         pending?.cancel()
         let work = DispatchWorkItem { [weak self] in
             Task { @MainActor in
-                self?.previewCache = self?.previewCache.filter { id, _ in self?.job(id)?.phase == .ready } ?? [:]
+                self?.previewCache = self?.previewCache.filter { id, _ in
+                    let p = self?.job(id)?.phase
+                    return p == .ready || p == .posting || p == .failed
+                } ?? [:]
                 self?.reload()
             }
         }
@@ -469,7 +496,7 @@ final class AppStore {
             let j = JSON.parse(out.stdout)
             reload()
             if let job = Job(json: j) { return job }
-            return jobs.first
+            return nil
         } catch let f as CLI.Failure {
             if case .cliError(let m, _) = f, JSON.parse(m).exists {
                 say(JSON.parse(m)["message"].string("Could not start that review."), .error)
@@ -485,13 +512,19 @@ final class AppStore {
 
     func cancel(_ job: Job) {
         Task {
-            _ = try? await CLI.shared.run(.cancelJob(job: job.id))
-            edits[job.id] = nil
+            do {
+                _ = try await CLI.shared.run(.cancelJob(job: job.id))
+                edits[job.id] = nil
+            } catch {
+                say((error as? LocalizedError)?.errorDescription ?? "Could not discard that review.", .error)
+            }
             reload()
         }
     }
 
     func post(_ job: Job) async {
+        guard postingJobs.insert(job.id).inserted else { return }
+        defer { postingJobs.remove(job.id) }
         // The edits are written to the job's own directory, never passed as a path.
         let dir = (CLI.shared.jobsPath as NSString).appendingPathComponent(job.id)
         let file = (dir as NSString).appendingPathComponent("edits.json")

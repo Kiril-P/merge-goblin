@@ -126,7 +126,7 @@ cmd_stats() {
   while [ $# -gt 0 ]; do
     case "$1" in
       --json) as_json=true; shift ;;
-      --days) days="${2:-30}"; shift 2 ;;
+      --days) days="${2:-30}"; shift $(( $# > 1 ? 2 : 1 )) ;;
       --refresh) refresh=true; shift ;;
       *) shift ;;
     esac

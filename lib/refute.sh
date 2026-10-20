@@ -8,15 +8,23 @@
 # the loop, so it is skipped there. It fails open: if the check itself fails, the findings
 # stand as they were, because a broken second opinion must not erase a real review.
 
-# refute_provider <primary> — prefer a DIFFERENT provider that is ready, since a second
-# model catches what the first one is blind to; otherwise the same one.
+# refute_provider <primary> — the SAME provider the review used, unless the config
+# says otherwise. A second model catches what the first is blind to, but it also means
+# the diff goes to a second vendor, and nobody who chose one provider agreed to that:
+#   refute.provider = "auto"   → any other ready provider (falls back to the same one)
+#   refute.provider = "codex"  → that one
 refute_provider() {
   local primary="$1" want other
   want="$(cfg_get '.refute.provider' '')"
-  if [ -n "$want" ] && [ "$want" != "auto" ]; then printf '%s' "$want"; return 0; fi
-  other="$(providers_probe_all 2>/dev/null | jq -r --arg p "$primary" \
-    '[.[] | select(.name != $p and .available and .authed)] | .[0].name // empty' 2>/dev/null)"
-  printf '%s' "${other:-$primary}"
+  case "$want" in
+    ""|"$primary") printf '%s' "$primary"; return 0 ;;
+    claude|codex|cursor) printf '%s' "$want"; return 0 ;;
+    auto)
+      other="$(providers_probe_all 2>/dev/null | jq -r --arg p "$primary" \
+        '[.[] | select(.name != $p and .available and .authed)] | .[0].name // empty' 2>/dev/null)"
+      printf '%s' "${other:-$primary}"; return 0 ;;
+  esac
+  printf '%s' "$primary"
 }
 
 # refute_prompt <norm.json> <diff_file> <pr_json> <checkout> <out>
@@ -57,6 +65,8 @@ refute_apply() {
                and (($x.severity | rank) > ($f.severity | rank)) and ($x.severity != "question")
             then $f + {severity: $x.severity, refutedFrom: $f.severity}
           else $f end ]
+    | (($before - (.findings | length))) as $gone
+    | (if $gone > 0 then .summary = ((.summary // "") + "\n\n_A second look removed \($gone) finding\(if $gone == 1 then "" else "s" end) it could not confirm._") else . end)
     | .refute = { checked: $before, kept: (.findings | length),
                   dropped: ($before - (.findings | length)),
                   downgraded: ([.findings[] | select(.refutedFrom)] | length) }' "$norm" > "$norm.t" \

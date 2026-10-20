@@ -7,7 +7,7 @@
 cmd_migrate() {
   local from="$HOME/conductor"
   while [ $# -gt 0 ]; do
-    case "$1" in --from) from="$2"; shift 2 ;; *) shift ;; esac
+    case "$1" in --from) from="$2"; shift $(( $# > 1 ? 2 : 1 )) ;; *) shift ;; esac
   done
   cfg_ensure; goblin_ensure_dirs
   # Create the destinations up front: a redirect from a missing file is reported

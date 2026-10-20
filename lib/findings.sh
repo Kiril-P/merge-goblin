@@ -155,7 +155,10 @@ findings_run() {
     printf 'Return ONLY the JSON object described above. No prose, no markdown fence.\n'
   } > "$pf2"
 
+  # the rejected first call was paid for too
+  local first_cost="${GOBLIN_P_COST_USD:-0}"
   findings_invoke "$prov" "$pf2" "$dir" "$tmp" "$raw"; rc=$?
+  GOBLIN_P_COST_USD="$(awk -v a="$first_cost" -v b="${GOBLIN_P_COST_USD:-0}" 'BEGIN{printf "%.6f", a+b}')"
   if [ "$rc" -eq 0 ] && findings_validate "$tmp" "$errf"; then
     findings_normalize "$tmp" "$out"; return $?
   fi

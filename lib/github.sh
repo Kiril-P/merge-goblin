@@ -70,16 +70,28 @@ gh_pr_meta() {
     > "$3" 2>/dev/null
 }
 
+# gh_marker_authors — a JSON array literal of the logins whose markers we trust: this
+# account and the fleet. A marker is just text in a comment; anybody can paste one, and
+# a forged "already reviewed" marker would make the PR silently un-reviewable.
+gh_marker_authors() {
+  local list="${GOBLIN_LOGIN:-}"
+  list="$list $(cfg_get_json '.fleet // []' '[]' | jq -r '.[]?' 2>/dev/null)"
+  printf '%s' "$list" | tr -c 'A-Za-z0-9-' '\n' | grep . | sort -u | jq -R . | jq -sc .
+}
+
 # gh_prior_review <slug> <pr> — the most recent review marker on this PR, or empty.
 # Read from GitHub (not local state) so a fresh machine still knows what was posted.
 # Matches the pre-rename prefix too, else a rename would make the Goblin forget
 # every review it had already posted and duplicate all of them.
 gh_prior_review() {
+  local who; who="$(gh_marker_authors)"; [ -n "$who" ] || who='[]'
   gh api --paginate "repos/$1/pulls/$2/reviews?per_page=100" --jq '
-    [ .[]
-      | select(.body != null)
+    '"$who"' as $who
+    | [ .[]
+      | select(.body != null and ((.user.login // "") as $u | $who | index($u)))
       | (.body | capture("<!-- (?<ns>'"$GOBLIN_MARKER_NS"'|'"$GOBLIN_MARKER_NS_LEGACY"'):review (?<j>\\{.*?\\}) -->") // empty) as $c
-      | { submitted_at, commit_id, m: ($c.j | fromjson) } ]
+      | (try ($c.j | fromjson) catch empty) as $m
+      | { submitted_at, commit_id, m: $m } ]
     | sort_by(.submitted_at) | last // empty' 2>/dev/null
 }
 
@@ -124,12 +136,16 @@ gh_human_reviewers() {
 # `.line` can be null on outdated comments (only the deprecated `position`
 # survives), so fall back to original_line.
 gh_prior_findings() {
+  local who; who="$(gh_marker_authors)"; [ -n "$who" ] || who='[]'
   gh api --paginate "repos/$1/pulls/$2/comments?per_page=100" --jq '
-    [ .[]
+    '"$who"' as $who
+    | [ .[]
       | . as $c
-      | select(.body != null)
+      | select(.body != null and ((.user.login // "") as $u | $who | index($u)))
       | (.body | capture("<!-- (?<ns>'"$GOBLIN_MARKER_NS"'|'"$GOBLIN_MARKER_NS_LEGACY"'):finding (?<j>\\{.*?\\}) -->") // empty) as $mk
-      | ($mk.j | fromjson)
+      | (try ($mk.j | fromjson) catch empty) as $pf
+      | select(($pf | type) == "object")
+      | $pf
         + { commentId: $c.id, path: $c.path, line: ($c.line // $c.original_line) } ]' 2>/dev/null
 }
 
@@ -148,12 +164,25 @@ gh_ticket_context() {
   : > "$out"
   local body key url
   body="$(jq -r '.body // ""' "$prjson" 2>/dev/null)"
-  key="$(printf '%s' "$body" | grep -oE '[A-Z][A-Z0-9]+-[0-9]+' | head -1)"
   url="$(printf '%s' "$body" | grep -oE 'https://linear\.app/[^) ]+' | head -1)"
+  # The key comes from the tracker link when there is one. A bare WORD-123 in prose is
+  # as likely to be UTF-8, SHA-256 or CVE-2024 as a ticket, so those are never keys,
+  # and `ticketKeyPrefixes` in the config narrows it to the prefixes a team really uses.
+  key="$(printf '%s' "$url" | grep -oE '/issue/[A-Z][A-Z0-9]+-[0-9]+' | head -1 | sed 's#/issue/##')"
+  if [ -z "$key" ]; then
+    local prefixes; prefixes="$(cfg_get_json '.ticketKeyPrefixes // []' '[]' | jq -r 'join("|")' 2>/dev/null)"
+    if [ -n "$prefixes" ]; then
+      key="$(printf '%s' "$body" | grep -oE "\\b($prefixes)-[0-9]+" | head -1)"
+    else
+      key="$(printf '%s' "$body" | grep -oE '\b[A-Z][A-Z0-9]+-[0-9]+' \
+             | grep -vE '^(UTF|SHA|ISO|CVE|CWE|RFC|MD|AES|RSA|TLS|SSL|HTTP|IPV|WCAG|OAUTH|GPT|PR|ES|PEP|BIP|X|CRC|BASE|ECMA)-' | head -1)"
+    fi
+  fi
 
   local linkback
   linkback="$(gh api --paginate "repos/$slug/issues/$pr/comments?per_page=100" \
-    --jq '[.[] | select(.body != null and (.body | test("linear-linkback|linear\\.app")))
+    --jq '[.[] | select(.body != null and (.user.type == "Bot") and ((.user.login // "") | test("linear"; "i"))
+                        and (.body | test("linear-linkback|linear\\.app")))
            | .body] | first // empty' 2>/dev/null)"
 
   if [ -n "$key" ] || [ -n "$linkback" ]; then

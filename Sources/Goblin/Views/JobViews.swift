@@ -103,6 +103,7 @@ struct JobRow: View {
         }
         .contentShape(Rectangle())
         .onTapGesture { open(job) }
+        .accessibilityAction(named: "Open review") { open(job) }
     }
 }
 
@@ -179,5 +180,6 @@ struct QueueRow: View {
         .padding(.horizontal, 6).padding(.vertical, 5)
         .contentShape(Rectangle())
         .onTapGesture { store.openURL(pr.url) }
+        .accessibilityAction(named: "Open the pull request") { store.openURL(pr.url) }
     }
 }

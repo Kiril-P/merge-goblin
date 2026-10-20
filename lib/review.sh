@@ -107,7 +107,7 @@ cmd_resolve() {
   local ref="" repo="" json=true
   while [ $# -gt 0 ]; do
     case "$1" in
-      --repo) repo="${2:-}"; shift 2 ;;
+      --repo) repo="${2:-}"; shift $(( $# > 1 ? 2 : 1 )) ;;
       --plain) json=false; shift ;;
       --json) json=true; shift ;;
       -*) echo "goblin resolve: unknown option $1" >&2; return 2 ;;
@@ -137,16 +137,16 @@ cmd_review() {
   local ref="" repo="" mode="" force=false provider="" model="" focus=full detach=false json=false run_job=""
   while [ $# -gt 0 ]; do
     case "$1" in
-      --repo)     repo="${2:-}"; shift 2 ;;
+      --repo)     repo="${2:-}"; shift $(( $# > 1 ? 2 : 1 )) ;;
       --post)     mode=post; shift ;;
       --preview)  mode=preview; shift ;;
       --force)    force=true; shift ;;
-      --provider) provider="${2:-}"; shift 2 ;;
-      --model)    model="${2:-}"; shift 2 ;;
-      --focus)    focus="${2:-}"; shift 2 ;;
+      --provider) provider="${2:-}"; shift $(( $# > 1 ? 2 : 1 )) ;;
+      --model)    model="${2:-}"; shift $(( $# > 1 ? 2 : 1 )) ;;
+      --focus)    focus="${2:-}"; shift $(( $# > 1 ? 2 : 1 )) ;;
       --detach)   detach=true; shift ;;
       --json)     json=true; shift ;;
-      --run-job)  run_job="${2:-}"; shift 2 ;;
+      --run-job)  run_job="${2:-}"; shift $(( $# > 1 ? 2 : 1 )) ;;
       -*) echo "goblin review: unknown option $1" >&2; return 2 ;;
       *)  ref="$1"; shift ;;
     esac
@@ -324,7 +324,7 @@ cmd_post() {
   local id="" edits="" json=false
   while [ $# -gt 0 ]; do
     case "$1" in
-      --edits) edits="${2:-}"; shift 2 ;;
+      --edits) edits="${2:-}"; shift $(( $# > 1 ? 2 : 1 )) ;;
       # The app writes jobs/<id>/edits.json itself and names no path: nothing a UI
       # could be talked into passing can point this at some other file.
       --saved-edits) edits="@saved"; shift ;;
@@ -406,13 +406,16 @@ review_apply_edits() {
     and ((.edit // {}) | type == "object"
          and all(.[]; type == "object"
                  and ((keys - ["severity","title","body","suggestion"]) | length == 0)
-                 and ((.severity // "nit") | IN("blocker","convention","risk","nit","question"))))
+                 and ((.severity // "nit") | IN("blocker","convention","risk","nit","question"))
+                 and ((.title // "x") | type == "string" and length > 0)
+                 and ((.body // "x") | type == "string" and length > 0)
+                 and ((.suggestion // "x") | type == "string")))
     and ((.summary // "") | type == "string")' "$edits" >/dev/null 2>&1 || return 1
   jq --slurpfile e "$edits" '
     ($e[0].drop // []) as $drop | ($e[0].edit // {}) as $ed
     | ["blocker","convention","risk","nit","question"] as $order
     | .findings |= ( map(select(.id as $i | ($drop | index($i)) | not))
-                     | map(if $ed[.id] then . + $ed[.id] else . end)
+                     | map(if $ed[.id] then . + ($ed[.id] | with_entries(select(.value != null))) else . end)
                      | sort_by(.severity as $s | $order | index($s)) )
     | if ($e[0].summary // "") != "" then .summary = $e[0].summary else . end' \
     "$norm" > "$norm.t" && mv "$norm.t" "$norm"
@@ -452,7 +455,7 @@ cmd_jobs() {
   while [ $# -gt 0 ]; do
     case "$1" in
       --json) json=true; shift ;;
-      --limit) limit="${2:-50}"; shift 2 ;;
+      --limit) limit="${2:-50}"; shift $(( $# > 1 ? 2 : 1 )) ;;
       *) shift ;;
     esac
   done

@@ -18,7 +18,11 @@ struct ReviewWindowView: View {
                 case .ready, .posting: PreviewPane(store: store, job: job)
                 case .queued, .fetching, .reading, .reviewing: RunningPane(store: store, job: job)
                 case .done: DonePane(store: store, job: job)
-                case .failed: FailedPane(store: store, job: job)
+                case .failed:
+                    // A post that failed leaves the review (and your edits) intact: show them
+                    // again with the reason, rather than offering only a brand-new review.
+                    if store.preview(for: job.id) != nil { PreviewPane(store: store, job: job) }
+                    else { FailedPane(store: store, job: job) }
                 case .skipped: SkippedPane(store: store, job: job)
                 case .cancelled, .discarded: EndedPane(store: store, job: job)
                 }
@@ -121,7 +125,8 @@ private struct PreviewPane: View {
 
     private var preview: ReviewPreview? { store.preview(for: job.id) }
     private var edits: ReviewEdits { store.edits[job.id] ?? ReviewEdits() }
-    private var posting: Bool { job.phase == .posting }
+    @State private var confirmDiscard = false
+    private var posting: Bool { job.phase == .posting || store.postingJobs.contains(job.id) }
 
     var body: some View {
         if let p = preview {
@@ -129,6 +134,11 @@ private struct PreviewPane: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
                         JobHeader(job: job, store: store, preview: p)
+                        if job.phase == .failed || !job.error.isEmpty {
+                            Text(job.errorDetail.isEmpty ? "The last attempt to post this did not go through. Nothing was lost: your edits are still here."
+                                                         : "The last attempt to post this failed: \(job.errorDetail) Your edits are still here.")
+                                .font(.system(size: 12.5)).foregroundStyle(Color(nsColor: .systemOrange))
+                        }
                         summaryCard(p)
                         if let intent = p.intent { intentCard(intent) }
                         findingsSection(p)
@@ -152,6 +162,7 @@ private struct PreviewPane: View {
                 HStack {
                     SectionLabel(text: "Summary")
                     Button(editingSummary ? "Done" : "Edit") { editingSummary.toggle() }.buttonStyle(.goblinQuiet)
+                        .accessibilityLabel(editingSummary ? "Done editing summary" : "Edit summary")
                 }
                 if editingSummary {
                     TextEditor(text: Binding(
@@ -161,7 +172,9 @@ private struct PreviewPane: View {
                         .scrollContentBackground(.hidden)
                         .padding(6).background(Theme.fieldFill, in: RoundedRectangle(cornerRadius: 8))
                 } else {
-                    Markdown(text: edits.summary ?? p.summary).font(.system(size: 13.5))
+                    // An emptied summary is not sent (the engine keeps the original), so show
+                    // the original rather than a blank that would not match what is posted.
+                    Markdown(text: (edits.summary?.isEmpty == false ? edits.summary : nil) ?? p.summary).font(.system(size: 13.5))
                 }
                 if !p.blastRadius.isEmpty {
                     Text("If it's wrong: \(p.blastRadius)").font(.system(size: 12)).foregroundStyle(.secondary)
@@ -216,7 +229,10 @@ private struct PreviewPane: View {
             }
             Spacer()
             if !edits.isEmpty { Button("Reset edits") { store.edits[job.id] = nil }.buttonStyle(.goblinQuiet) }
-            Button("Discard") { store.cancel(job) }.buttonStyle(.goblin).disabled(posting)
+            Button("Discard") { confirmDiscard = true }.buttonStyle(.goblin).disabled(posting)
+                .confirmationDialog("Discard this review?", isPresented: $confirmDiscard) {
+                    Button("Discard review", role: .destructive) { store.cancel(job) }
+                } message: { Text("Nothing has been posted. Your edits will be lost.") }
             Button {
                 Task { await store.post(job) }
             } label: {
@@ -261,6 +277,7 @@ struct FindingCard: View {
                         get: { !dropped },
                         set: { on in if on { edits.dropped.remove(finding.id) } else { edits.dropped.insert(finding.id) } }))
                         .toggleStyle(.checkbox).labelsHidden().help("Include this finding")
+                        .accessibilityLabel("Include finding: \(title)")
                     Menu {
                         ForEach(Severity.allCases) { s in
                             Button { setEdit { $0.severity = s } } label: { Label(s.label, systemImage: s == severity ? "checkmark" : "") }
@@ -276,6 +293,7 @@ struct FindingCard: View {
                     }
                     Spacer()
                     Button(editing ? "Done" : "Edit") { editing.toggle() }.buttonStyle(.goblinQuiet)
+                        .accessibilityLabel(editing ? "Done editing finding" : "Edit finding: \(title)")
                 }
                 if editing {
                     TextField("Title", text: Binding(get: { title }, set: { v in setEdit { $0.title = v } }))
@@ -312,11 +330,19 @@ struct FindingCard: View {
 struct Markdown: View {
     let text: String
     var body: some View {
-        if let a = try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
-            Text(a).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-        } else {
-            Text(text).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+        Text(Self.attributed(text)).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+    }
+
+    static func attributed(_ text: String) -> AttributedString {
+        guard var a = try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) else {
+            return AttributedString(text)
         }
+        // Finding text is model output derived from somebody else's pull request. A link
+        // in it must not be able to open smb://, file:// or another app's URL scheme.
+        for run in a.runs {
+            if let l = run.link, !Command.isHTTPS(l.absoluteString) { a[run.range].link = nil }
+        }
+        return a
     }
 }
 

@@ -29,8 +29,8 @@ REVIEWS_THIS_RUN=0
 cmd_run() {
   while [ $# -gt 0 ]; do
     case "$1" in
-      --pr)        ONLY_PR="$2"; shift 2 ;;
-      --repo)      ONLY_REPO="$2"; shift 2 ;;
+      --pr)        ONLY_PR="$2"; shift $(( $# > 1 ? 2 : 1 )) ;;
+      --repo)      ONLY_REPO="$2"; shift $(( $# > 1 ? 2 : 1 )) ;;
       --plan|--dry-run) DRY_RUN=true; shift ;;
       --force)     FORCE=true; shift ;;
       --scheduled) SCHEDULED=true; shift ;;
@@ -52,7 +52,10 @@ cmd_run() {
     fi
     return 0
   fi
-  trap 'claim_release; claim_release_comment; lock_release' EXIT INT TERM
+  # EXIT cleans up; a signal must END the run (not just clean up and carry on
+  # reviewing and posting), and then the EXIT trap does the cleanup exactly once.
+  trap 'claim_release; claim_release_comment; lock_release' EXIT
+  trap 'exit 130' INT TERM
 
   log "=== run start ${ONLY_PR:+(pr #$ONLY_PR) }${DRY_RUN:+}$([ "$DRY_RUN" = true ] && echo '(dry run)')"
 
@@ -329,6 +332,7 @@ engine_pr() {
       case $? in
         0) : ;;
         2) claim_try_comment "$slug" "$pr" "$head" || { log "  #$pr: claimed elsewhere"; return 0; } ;;
+        3) log "  #$pr: could not take the claim just now (network or rate limit) — next cycle"; return 0 ;;
         *) log "  #$pr: claimed by another bot"; ledger_add "$key"; return 0 ;;
       esac
     fi
@@ -345,7 +349,7 @@ engine_pr() {
 # Serialised per repo: the scratch clone is shared and is reset --hard before every
 # checkout, which would pull the files out from under a model that is reading them.
 engine_review_pr() {
-  local slug="$2" rc
+  local slug="$1" rc
   if ! repo_lock_acquire "$slug"; then
     log "  #$2: could not get the repo lock for $slug"
     return 1
@@ -386,13 +390,14 @@ engine_review_pr_locked() {
   else log "  #$pr: no local checkout (reviewing from diff only)"; fi
 
   # 3. context: PR meta, ticket, findings already posted
-  gh_pr_meta "$slug" "$pr" "$work/pr.json" || printf '{"number":%s,"title":"%s","body":"","base":"%s","author":""}' "$pr" "$title" "$base" > "$work/pr.json"
+  gh_pr_meta "$slug" "$pr" "$work/pr.json" \
+    || jq -nc --argjson n "$pr" --arg t "$title" --arg b "$base" '{number:$n,title:$t,body:"",base:$b,author:""}' > "$work/pr.json"
   gh_ticket_context "$slug" "$pr" "$work/pr.json" "$work/ticket.txt" >/dev/null
   : > "$work/prior.txt"
   local prior_json="$work/prior.json"; echo '[]' > "$prior_json"
   if [ -n "$last_sha" ] && [ "$(cfg_get '.incrementalReview' true)" = "true" ]; then
     gh_prior_findings "$slug" "$pr" > "$prior_json" 2>/dev/null || echo '[]' > "$prior_json"
-    jq -r '.[] | "- \(.severity // "?"): \(.path // "?"):\(.line // "?")"' "$prior_json" > "$work/prior.txt" 2>/dev/null
+    jq -r 'def one: tostring | gsub("[\\n\\r]+";" ") | .[0:200]; .[] | "- \(.severity // "?" | one): \(.path // "?" | one):\(.line // "?" | one)"' "$prior_json" > "$work/prior.txt" 2>/dev/null
     log "  #$pr: incremental (last reviewed $(trunc "$last_sha" 7), $(jq 'length' "$prior_json") prior finding(s))"
   fi
 
@@ -621,7 +626,9 @@ engine_scrub_symlinks() {
 
 engine_checkout() {
   local slug="$1" pr="$2" dir="$3"
-  if ! git -C "$dir" rev-parse --git-dir >/dev/null 2>&1; then
+  # `rev-parse --git-dir` alone is true for any directory INSIDE some other work tree, and
+  # a reset --hard there would run against that other repository.
+  if [ ! -d "$dir" ] || [ "$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null)" != "$(cd "$dir" 2>/dev/null && pwd -P)" ]; then
     log "  cloning $slug (one-time)"
     rm -rf "$dir"
     engine_git clone --quiet "https://github.com/$slug.git" "$dir" >/dev/null 2>&1 || return 1

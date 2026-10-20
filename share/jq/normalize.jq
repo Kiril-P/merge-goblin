@@ -68,7 +68,18 @@ def canon_suggested:
       # hash function; base64-truncation would only reflect the prefix).
       | . + { idRaw: ((.path // "repo") + "\n" + (.title | ascii_downcase)) }
     ]
-    | unique_by(.idRaw)
+    # The same remark on different lines of one file is several findings, not one. Only
+    # an exact repeat (same place, same words) is dropped. The n-th occurrence of a
+    # title in a file gets a suffix so ids stay distinct; the first keeps the id it
+    # always had.
+    | unique_by([.idRaw, .line, .side, .start_line])
+    | sort_by([.path // "", .line // 0])
+    | reduce .[] as $f ({seen: {}, out: []};
+        $f.idRaw as $k
+        | (.seen[$k] // 0) as $n
+        | .seen[$k] = $n + 1
+        | .out += [ if $n == 0 then $f else $f + {idRaw: ($f.idRaw + "\n#" + ($n | tostring))} end ])
+    | .out
     | sort_by([ (.severity | sevrank), (.path // ""), (.line // 0) ])
     | .[0:$max]
   )

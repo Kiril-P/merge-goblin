@@ -7,3 +7,6 @@ tests/fixtures/tmp/
 .build/
 build/
 *.xcuserdatad
+
+# local agent state
+.claude/

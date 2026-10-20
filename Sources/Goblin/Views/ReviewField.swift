@@ -106,7 +106,7 @@ struct ReviewField: View {
                 } else if !input.text.isEmpty {
                     Button { input.text = "" } label: {
                         Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
-                    }.buttonStyle(.plain)
+                    }.buttonStyle(.plain).accessibilityLabel("Clear")
                 }
                 Button(action: go) {
                     HStack(spacing: 4) { Text("Review"); Image(systemName: "return").font(.system(size: 10, weight: .bold)) }

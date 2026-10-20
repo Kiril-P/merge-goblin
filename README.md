@@ -192,8 +192,10 @@ of `origin/<base>` as git blobs (symlinks ignored) and builds the prompt from th
   prompt, so he doesn't repeat them.
 - **A second look before posting.** For reviews that post without a person reading them first
   (the scheduler, `--post`), a skeptical second pass tries to disprove each finding against the
-  source — using a different provider when one is ready. It can drop a finding or lower its
-  severity, never raise it, and if it fails the findings stand as they were. Previews skip it
+  source, by default with the same provider that wrote the review (set `refute.provider` to
+  `auto` or a provider name to have another one check it, which sends the diff to that vendor too).
+  It can drop a finding or lower its severity, never raise it, notes in the summary when it
+  removed something, and if it fails the findings stand as they were. Previews skip it
   because you are the second look. Costs roughly double; turn it off with `refutePass`.
 
 ## Running it as a team

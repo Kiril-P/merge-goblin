@@ -85,6 +85,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             if rest.count >= 3 { text = "\(rest[rest.startIndex])/\(rest[rest.startIndex + 1])#\(rest[rest.startIndex + 2])" }
             else { text = rest.joined() }
             guard let ref = PRRef.parse(text) else { store.say("That link doesn't point at a pull request.", .error); return }
+            // Any web page can fire this link, and a review spends your subscription, so
+            // ask first. It is a preview either way.
+            let alert = NSAlert()
+            alert.messageText = "Review \(ref.canonical)?"
+            alert.informativeText = "A link asked the Merge Goblin to review this pull request. Nothing is posted until you read it."
+            alert.addButton(withTitle: "Review"); alert.addButton(withTitle: "Cancel")
+            NSApp.activate(ignoringOtherApps: true)
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
             var o = ReviewOptions(); o.mode = .preview
             if ref.slug == nil { o.repo = store.snapshot.settings.lastRepo.isEmpty ? nil : store.snapshot.settings.lastRepo }
             if let job = await store.startReview(ref, options: o) { WindowManager.shared.showJob(job.id) }

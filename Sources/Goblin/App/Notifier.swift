@@ -77,7 +77,11 @@ final class Notifier {
 
     private func drainLocked() {
         let url = queueURL
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return }
+        guard let handle = try? FileHandle(forReadingFrom: url) else {
+            // No file yet: whatever is written first is news, not history.
+            if !primed { primed = true; offset = 0 }
+            return
+        }
         defer { try? handle.close() }
 
         let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)

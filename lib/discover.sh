@@ -138,8 +138,8 @@ cmd_repos_search() {
   while [ $# -gt 0 ]; do
     case "$1" in
       --json)    as_json=true; shift ;;
-      --query|-q) query="${2:-}"; shift 2 ;;
-      --limit)   limit="${2:-50}"; shift 2 ;;
+      --query|-q) query="${2:-}"; shift $(( $# > 1 ? 2 : 1 )) ;;
+      --limit)   limit="${2:-50}"; shift $(( $# > 1 ? 2 : 1 )) ;;
       --refresh) refresh=true; shift ;;
       *) shift ;;
     esac

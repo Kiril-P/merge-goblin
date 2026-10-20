@@ -109,6 +109,7 @@ enum TimeoutClass {
     case mutation       // writes config/state
     case doctor         // probes github + providers + clones
     case discovery      // network listing (repo search, account list)
+    case post           // publishing a review: killing it mid-flight risks a double post
 
     var seconds: TimeInterval {
         switch self {
@@ -116,6 +117,7 @@ enum TimeoutClass {
         case .mutation:  return 30
         case .doctor:    return 60
         case .discovery: return 45
+        case .post:      return 300
         }
     }
 }
@@ -270,7 +272,7 @@ enum Command: Equatable {
             return .cli(argv: argv, timeout: .discovery, mutating: false, json: true)
         case .postReview(let job):
             return .cli(argv: ["post", job, "--saved-edits", "--json"],
-                        timeout: .discovery, mutating: true, json: true)
+                        timeout: .post, mutating: true, json: true)
         case .cancelJob(let job):
             return .cli(argv: ["cancel", job], timeout: .mutation, mutating: true, json: false)
         case .pruneJobs:

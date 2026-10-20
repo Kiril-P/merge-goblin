@@ -451,7 +451,9 @@ struct Snapshot: Equatable {
             && a.jobsReady == b.jobsReady && a.settings == b.settings && a.updateAvailable == b.updateAvailable
             && a.agentRunning == b.agentRunning && a.identityOK == b.identityOK && a.activity == b.activity
             && a.repos.map(\.slug) == b.repos.map(\.slug) && a.repos.map(\.enabled) == b.repos.map(\.enabled)
-            && a.fleet == b.fleet
+            && a.fleet == b.fleet && a.pausedReason == b.pausedReason && a.reviewsTotal == b.reviewsTotal
+            && a.version == b.version && a.updateLatest == b.updateLatest && a.updateURL == b.updateURL
+            && a.agentInstalled == b.agentInstalled
     }
 
     init() {}

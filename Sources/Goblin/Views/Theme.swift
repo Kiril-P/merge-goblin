@@ -16,6 +16,17 @@ enum Theme {
             : NSColor(srgbRed: 0.08, green: 0.52, blue: 0.28, alpha: 1)
     })
     static let accentSoft = accent.opacity(0.14)
+    /// Text on a filled accent button: white on the deep light-mode green (about 5:1),
+    /// near-black on the bright dark-mode green. Black on the light green was about 4:1.
+    static let onAccent = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(white: 0.05, alpha: 0.92) : NSColor.white
+    })
+    /// systemYellow text on a pale tint is about 1.5:1 in light mode; a dark amber reads.
+    static let amber = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor.systemYellow : NSColor(srgbRed: 0.58, green: 0.38, blue: 0.0, alpha: 1)
+    })
 
     static let card = Color(nsColor: .controlBackgroundColor).opacity(0.65)
     static let hairline = Color(nsColor: .separatorColor).opacity(0.6)
@@ -25,7 +36,7 @@ enum Theme {
         switch s {
         case .blocker: return Color(nsColor: .systemRed)
         case .convention: return Color(nsColor: .systemOrange)
-        case .risk: return Color(nsColor: .systemYellow)
+        case .risk: return Theme.amber
         case .nit: return Color(nsColor: .systemGray)
         case .question: return Color(nsColor: .systemBlue)
         }
@@ -125,7 +136,7 @@ struct GoblinButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         let fg: Color = {
             switch kind {
-            case .primary: return Color(nsColor: .black).opacity(0.85)
+            case .primary: return Theme.onAccent
             case .destructive: return Color(nsColor: .systemRed)
             default: return .primary
             }
