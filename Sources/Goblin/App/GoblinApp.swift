@@ -49,8 +49,20 @@ final class BarAnimator {
     static let shared = BarAnimator()
     private(set) var frame = 0
     private var timer: Timer?
+    private var last: BarGlyph = .idle
+    private var observer: NSObjectProtocol?
+
+    init() {
+        // Reduce Motion can be switched while a review is running; re-decide then, not
+        // only on the next state change.
+        observer = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in guard let self else { return }; self.update(for: self.last) }
+        }
+    }
 
     func update(for glyph: BarGlyph) {
+        last = glyph
         let animate = glyph == .reviewing && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         if animate, timer == nil {
             timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in

@@ -1226,6 +1226,37 @@ test_refute_notes_what_it_removed_and_stays_on_the_same_provider() {
   teardown
 }
 
+
+test_jq_programs_compile() {
+  # A runtime error on the empty input is expected (and validate.jq halts on purpose);
+  # "compile error" — bad syntax, or a variable nobody passes — is not. Same rule as CI.
+  local f err
+  for f in "$ROOT"/share/jq/*.jq; do
+    err="$(jq -n --argjson max 25 --argjson ok '[[]]' -f "$f" 2>&1 >/dev/null)"
+    case "$err" in *"compile error"*) echo "$(basename "$f"): $err"; return 1 ;; esac
+  done
+  # and the check itself must be able to fail
+  case "$(printf '$nope' | jq -n -f /dev/stdin 2>&1)" in *"compile error"*) ;; *) echo "check is blind"; return 1 ;; esac
+}
+
+test_post_refuses_a_duplicate_of_a_newer_review() {
+  setup
+  . "$ROOT/lib/github.sh" 2>/dev/null; . "$ROOT/lib/review.sh" 2>/dev/null
+  mk_fake_gh
+  GOBLIN_LOGIN="me"
+  GH_FIXTURE="$GOBLIN_HOME/reviews.json"; export GH_FIXTURE
+  cat > "$GH_FIXTURE" <<J
+[{"body":"<!-- $GOBLIN_MARKER_NS:review {\"headSha\":\"abc\"} -->","user":{"login":"me"},"submitted_at":"2026-10-20T12:00:00Z","commit_id":"abc"}]
+J
+  local before after
+  before="$(date -u -j -f '%Y-%m-%dT%H:%M:%SZ' '2026-10-20T11:00:00Z' +%s 2>/dev/null || date -u -d '2026-10-20T11:00:00Z' +%s)"
+  after="$(date -u -j -f '%Y-%m-%dT%H:%M:%SZ' '2026-10-20T13:00:00Z' +%s 2>/dev/null || date -u -d '2026-10-20T13:00:00Z' +%s)"
+  review_posted_since a/b 1 abc "$before" || { echo "a review posted after the preview must block"; return 1; }
+  review_posted_since a/b 1 abc "$after"  && { echo "a review from before the preview is a deliberate re-review"; return 1; }
+  review_posted_since a/b 1 other "$before" && { echo "a review of another commit is not a duplicate"; return 1; }
+  teardown
+}
+
 # ---------------------------------------------------------------- update ---
 test_update_version_compare() {
   setup
@@ -1747,6 +1778,8 @@ t "findings: same remark, many lines, kept" test_same_remark_on_different_lines_
 t "review: edits can't post null text"     test_edits_cannot_post_null_text
 t "cli: option missing its value returns"  test_an_option_missing_its_value_does_not_hang
 t "refute: same provider, notes removals"  test_refute_notes_what_it_removed_and_stays_on_the_same_provider
+t "hygiene: jq programs compile"          test_jq_programs_compile
+t "post: no duplicate of a newer review"   test_post_refuses_a_duplicate_of_a_newer_review
 
 . "$ROOT/tests/stats_test.sh"
 t "stats: classifies our threads"          test_stats_classifies_our_threads

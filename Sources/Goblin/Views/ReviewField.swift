@@ -217,7 +217,7 @@ struct ReviewField: View {
             if input.options.focus != .full { Chip(text: input.options.focus.rawValue.capitalized) }
             if input.options.force { Chip(text: "Review anyway", tint: Color(nsColor: .systemOrange)) }
             Spacer()
-            Button { withAnimation(.snappy(duration: 0.2)) { showOptions.toggle() } } label: {
+            Button { withAnimation(Motion.quick) { showOptions.toggle() } } label: {
                 HStack(spacing: 3) {
                     Text("Options")
                     Image(systemName: "chevron.right").rotationEffect(.degrees(showOptions ? 90 : 0))

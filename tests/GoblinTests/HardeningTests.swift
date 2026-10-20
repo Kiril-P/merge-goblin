@@ -35,4 +35,11 @@ final class HardeningTests: XCTestCase {
         a = Snapshot(); b = Snapshot(); b.version = "9"
         XCTAssertNotEqual(a, b)
     }
+
+    func testSeverityCountsReadTheEnginesLine() throws {
+        let c = try XCTUnwrap(SeverityCounts.parse("🔴 1 blocker · 🟡 2 risk"))
+        XCTAssertEqual(c.map(\.0), [.blocker, .risk])
+        XCTAssertEqual(c.map(\.1), [1, 2])
+        XCTAssertNil(SeverityCounts.parse("no findings"))   // shown as plain text instead
+    }
 }

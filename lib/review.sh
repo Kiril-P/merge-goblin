@@ -321,7 +321,7 @@ review_run_job() {
 }
 
 cmd_post() {
-  local id="" edits="" json=false
+  local id="" edits="" json=false force=false
   while [ $# -gt 0 ]; do
     case "$1" in
       --edits) edits="${2:-}"; shift $(( $# > 1 ? 2 : 1 )) ;;
@@ -329,6 +329,7 @@ cmd_post() {
       # could be talked into passing can point this at some other file.
       --saved-edits) edits="@saved"; shift ;;
       --json)  json=true; shift ;;
+      --force) force=true; shift ;;
       -*) echo "goblin post: unknown option $1" >&2; return 2 ;;
       *) id="$1"; shift ;;
     esac
@@ -374,6 +375,17 @@ cmd_post() {
   # spend shown for a single review.
   GOBLIN_P_COST_USD=0
 
+  # A preview can sit for hours. If a review of this exact commit was posted AFTER this
+  # preview was made (the scheduler, a teammate's goblin, or this same preview posted
+  # from another window), posting it again is a duplicate. A review posted BEFORE the
+  # preview was made is not: that is somebody deliberately asking for a fresh look.
+  if [ "$force" != true ] && review_posted_since "$slug" "$pr" "$head" "$(job_get "$id" createdAt)"; then
+    job_phase ready '{"error":"already_posted","errorDetail":"A review of this exact commit was posted after this preview was made, so posting it would duplicate it. Discard it, or post anyway with goblin post --force."}'
+    rm -rf "$work"
+    if [ "$json" = true ]; then jq -c '. + {ok:false}' "$dir/job.json"; else echo "goblin: this commit was already reviewed after the preview was made — not posting a duplicate (use --force to post anyway)" >&2; fi
+    return 1
+  fi
+
   local now_head
   now_head="$(gh api "repos/$slug/pulls/$pr" --jq .head.sha 2>/dev/null)"
   if [ -n "$now_head" ] && [ "$now_head" != "$head" ]; then
@@ -390,6 +402,21 @@ cmd_post() {
   [ "$ph" = posting ] && job_phase failed '{"error":"other","errorDetail":"Posting did not finish."}'
   if [ "$json" = true ]; then jq -c '. + {ok:true}' "$dir/job.json"; else review_print_outcome "$id"; fi
   return $rc
+}
+
+# review_posted_since <slug> <pr> <head> <epoch> — true when one of our (or the fleet's)
+# reviews of <head> was submitted after <epoch>. Fails open: if GitHub can't be read,
+# the post goes ahead rather than being blocked by a check that could not run.
+review_posted_since() {
+  local slug="$1" pr="$2" head="$3" since="${4:-0}" prior iso
+  case "$since" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$since" -gt 0 ] || return 1
+  iso="$(date -u -r "$since" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d "@$since" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null)"
+  [ -n "$iso" ] || return 1
+  prior="$(gh_prior_review "$slug" "$pr")"
+  [ -n "$prior" ] || return 1
+  printf '%s' "$prior" | jq -e --arg h "$head" --arg t "$iso" \
+    '(.m.headSha // "") == $h and (.submitted_at // "") > $t' >/dev/null 2>&1
 }
 
 # review_apply_edits <norm.json> <edits.json>

@@ -42,7 +42,7 @@ struct WelcomeView: View {
         }
         .frame(width: 620, height: 600)
         .background(.background)
-        .animation(.easeOut(duration: 0.18), value: model.step)
+        .animation(Motion.reduced ? .easeOut(duration: 0.12) : .spring(duration: 0.35, bounce: 0.12), value: model.step)
         .task { await model.load() }
         .modifier(ToastHost(store: store))
     }

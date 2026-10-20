@@ -31,6 +31,7 @@ struct ReviewWindowView: View {
                            subtitle: "Finished reviews are kept for two weeks.")
             }
         }
+        .animation(Motion.spring, value: store.job(jobID)?.phase)
         .frame(minWidth: 620, minHeight: 520)
         .background(.background)
         .toasts(store)
@@ -93,7 +94,7 @@ private struct RunningPane: View {
                     PhaseTrack(phase: job.phase, labels: true)
                     Text(blurb).font(.system(size: 12.5)).foregroundStyle(.secondary)
                 }
-                Mascot(.reviewing, size: 128)
+                Mascot(.reviewing, size: 128).modifier(Bob(active: true))
                 }
             }
             HStack {
@@ -133,14 +134,14 @@ private struct PreviewPane: View {
             VStack(spacing: 0) {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
-                        JobHeader(job: job, store: store, preview: p)
+                        JobHeader(job: job, store: store, preview: p).arrive()
                         if job.phase == .failed || !job.error.isEmpty {
                             Text(job.errorDetail.isEmpty ? "The last attempt to post this did not go through. Nothing was lost: your edits are still here."
                                                          : "The last attempt to post this failed: \(job.errorDetail) Your edits are still here.")
                                 .font(.system(size: 12.5)).foregroundStyle(Color(nsColor: .systemOrange))
                         }
-                        summaryCard(p)
-                        if let intent = p.intent { intentCard(intent) }
+                        summaryCard(p).arrive(0.03)
+                        if let intent = p.intent { intentCard(intent).arrive(0.06) }
                         findingsSection(p)
                     }
                     .padding(.horizontal, 28).padding(.vertical, 24)
@@ -201,10 +202,11 @@ private struct PreviewPane: View {
             if p.findings.isEmpty {
                 Card { EmptyState(symbol: "checkmark.seal", title: "Suspiciously clean", subtitle: "The reviewer found nothing to flag. The summary is still posted.") }
             } else {
-                ForEach(p.findings) { f in
+                ForEach(Array(p.findings.enumerated()), id: \.element.id) { i, f in
                     FindingCard(finding: f, edits: Binding(
                         get: { store.edits[job.id] ?? ReviewEdits() },
                         set: { store.edits[job.id] = $0 }))
+                    .arrive(0.08 + Double(min(i, 8)) * 0.05)
                 }
             }
         }
@@ -270,12 +272,12 @@ struct FindingCard: View {
     private var bodyText: String { edits.edited[finding.id]?.body ?? finding.body }
 
     var body: some View {
-        Card(padding: 14) {
+        Card(padding: 14, accent: dropped ? Color.secondary.opacity(0.4) : Theme.color(for: severity)) {
             VStack(alignment: .leading, spacing: 9) {
                 HStack(spacing: 8) {
                     Toggle("", isOn: Binding(
                         get: { !dropped },
-                        set: { on in if on { edits.dropped.remove(finding.id) } else { edits.dropped.insert(finding.id) } }))
+                        set: { on in withAnimation(Motion.spring) { if on { edits.dropped.remove(finding.id) } else { edits.dropped.insert(finding.id) } } }))
                         .toggleStyle(.checkbox).labelsHidden().help("Include this finding")
                         .accessibilityLabel("Include finding: \(title)")
                     Menu {
@@ -292,7 +294,7 @@ struct FindingCard: View {
                             .help("GitHub can't pin this to a line of the diff, so it is posted inside the review body.")
                     }
                     Spacer()
-                    Button(editing ? "Done" : "Edit") { editing.toggle() }.buttonStyle(.goblinQuiet)
+                    Button(editing ? "Done" : "Edit") { withAnimation(Motion.quick) { editing.toggle() } }.buttonStyle(.goblinQuiet)
                         .accessibilityLabel(editing ? "Done editing finding" : "Edit finding: \(title)")
                 }
                 if editing {
@@ -304,7 +306,11 @@ struct FindingCard: View {
                         .padding(6).background(Theme.fieldFill, in: RoundedRectangle(cornerRadius: 8))
                 } else {
                     Markdown(text: title).font(.system(size: 13.5, weight: .semibold))
-                    Markdown(text: bodyText).font(.system(size: 12.5)).foregroundStyle(.secondary)
+                        .strikethrough(dropped, color: .secondary)
+                    if !dropped {
+                        Markdown(text: bodyText).font(.system(size: 12.5)).foregroundStyle(.secondary)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
                 }
                 if let s = finding.suggestion, !s.isEmpty {
                     Text(s).font(.system(size: 11.5, design: .monospaced))
@@ -312,8 +318,10 @@ struct FindingCard: View {
                         .background(Theme.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
                 }
             }
-            .opacity(dropped ? 0.4 : 1)
+            .opacity(dropped ? 0.5 : 1)
         }
+        .animation(Motion.spring, value: dropped)
+        .animation(Motion.quick, value: editing)
     }
 
     private func setEdit(_ f: (inout FindingEdit) -> Void) {
@@ -351,22 +359,35 @@ struct Markdown: View {
 private struct DonePane: View {
     let store: AppStore
     let job: Job
+    @State private var celebrate = false
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             JobHeader(job: job, store: store)
-            Card(padding: 20) {
-                VStack(alignment: .leading, spacing: 10) {
-                    Label("Posted to GitHub", systemImage: "checkmark.circle.fill")
-                        .font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.accent)
-                    if !job.counts.isEmpty { Text(job.counts).font(.system(size: 13)) }
-                    HStack {
-                        if !job.reviewURL.isEmpty {
-                            Button("Open the review on GitHub") { store.openURL(job.reviewURL) }.buttonStyle(.goblinPrimary)
+            Card(padding: 20, accent: Theme.accent) {
+                HStack(alignment: .center, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .symbolEffect(.bounce, options: .nonRepeating, value: celebrate)
+                            Text("Posted to GitHub")
                         }
-                        Button("Open the pull request") { store.openURL(job.url) }.buttonStyle(.goblin)
+                        .font(.system(size: 17, weight: .semibold)).foregroundStyle(Theme.accent)
+                        if !job.counts.isEmpty { SeverityCounts(text: job.counts, size: 13) }
+                        HStack {
+                            if !job.reviewURL.isEmpty {
+                                Button("Open the review on GitHub") { store.openURL(job.reviewURL) }.buttonStyle(.goblinPrimary)
+                            }
+                            Button("Open the pull request") { store.openURL(job.url) }.buttonStyle(.goblin)
+                        }
                     }
+                    Spacer(minLength: 0)
+                    Mascot(.idleWave, size: 112)
+                        .scaleEffect(celebrate || Motion.reduced ? 1 : 0.6)
+                        .opacity(celebrate || Motion.reduced ? 1 : 0)
                 }
             }
+            .arrive()
+            .onAppear { withAnimation(Motion.reduced ? nil : .spring(duration: 0.55, bounce: 0.45).delay(0.1)) { celebrate = true } }
             Spacer()
         }.padding(28)
     }

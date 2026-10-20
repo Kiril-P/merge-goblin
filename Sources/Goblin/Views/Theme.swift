@@ -68,17 +68,74 @@ enum Theme {
     }
 }
 
+// MARK: - Motion
+
+/// The app's few animations, in one place, so Reduce Motion is honoured everywhere by
+/// construction: movement becomes a short fade, and nothing loops.
+enum Motion {
+    static var reduced: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    static var spring: Animation { reduced ? .easeOut(duration: 0.15) : .spring(duration: 0.4, bounce: 0.2) }
+    static var quick: Animation { reduced ? .easeOut(duration: 0.1) : .snappy(duration: 0.2) }
+    /// For rows that come and go in a list.
+    static var row: AnyTransition {
+        reduced ? .opacity
+                : .asymmetric(insertion: .opacity.combined(with: .move(edge: .top)).combined(with: .scale(scale: 0.98, anchor: .top)),
+                              removal: .opacity.combined(with: .scale(scale: 0.96)))
+    }
+}
+
+/// Fades and lifts content in once, `delay` seconds after it first appears: how a list
+/// arrives without every row landing in the same frame.
+struct Arrive: ViewModifier {
+    var delay: Double = 0
+    @State private var shown = false
+    func body(content: Content) -> some View {
+        content
+            .opacity(shown ? 1 : 0)
+            .offset(y: shown || Motion.reduced ? 0 : 6)
+            .onAppear {
+                withAnimation(Motion.reduced ? .easeOut(duration: 0.12) : .spring(duration: 0.45, bounce: 0.15).delay(delay)) { shown = true }
+            }
+    }
+}
+extension View {
+    func arrive(_ delay: Double = 0) -> some View { modifier(Arrive(delay: delay)) }
+}
+
 // MARK: - Surfaces
 
 struct Card<Content: View>: View {
     var padding: CGFloat = 12
+    /// A coloured edge on the leading side: what kind of thing this card is, at a glance.
+    var accent: Color? = nil
+    /// Lifts a little under the pointer. For cards that open something when clicked.
+    var interactive = false
     @ViewBuilder var content: () -> Content
+    @State private var hovering = false
+
     var body: some View {
         content()
             .padding(padding)
+            .padding(.leading, accent == nil ? 0 : 3)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 0.5))
+            .background {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Theme.card)
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.primary.opacity(interactive && hovering ? 0.035 : 0)))
+            }
+            .overlay(alignment: .leading) {
+                if let accent {
+                    UnevenRoundedRectangle(topLeadingRadius: 12, bottomLeadingRadius: 12, style: .continuous)
+                        .fill(accent.gradient).frame(width: 3.5)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(interactive && hovering ? Theme.hairline.opacity(1.6) : Theme.hairline, lineWidth: 0.5))
+            .shadow(color: .black.opacity(interactive && hovering ? 0.10 : 0.0), radius: 8, y: 3)
+            .scaleEffect(interactive && hovering && !Motion.reduced ? 1.004 : 1)
+            .onHover { h in withAnimation(Motion.quick) { hovering = h } }
     }
 }
 
@@ -131,33 +188,61 @@ struct GoblinButtonStyle: ButtonStyle {
     enum Kind { case primary, secondary, plain, destructive }
     var kind: Kind = .secondary
     var compact = false
-    @Environment(\.isEnabled) private var enabled
 
     func makeBody(configuration: Configuration) -> some View {
-        let fg: Color = {
-            switch kind {
-            case .primary: return Theme.onAccent
-            case .destructive: return Color(nsColor: .systemRed)
-            default: return .primary
-            }
-        }()
+        GoblinButtonBody(configuration: configuration, kind: kind, compact: compact)
+    }
+}
+
+/// The body is a view of its own so it can know about hover: a button that answers the
+/// pointer before it is pressed feels alive, and one that only reacts on press feels dead.
+private struct GoblinButtonBody: View {
+    let configuration: ButtonStyleConfiguration
+    let kind: GoblinButtonStyle.Kind
+    let compact: Bool
+    @Environment(\.isEnabled) private var enabled
+    @State private var hovering = false
+
+    var body: some View {
+        let pressed = configuration.isPressed
+        let shape = RoundedRectangle(cornerRadius: compact ? 7 : 9, style: .continuous)
         configuration.label
             .font(.system(size: compact ? 12 : 13, weight: .semibold))
             .padding(.horizontal, compact ? 10 : 14).padding(.vertical, compact ? 4 : 7)
-            .foregroundStyle(fg)
-            .background(background(configuration.isPressed), in: RoundedRectangle(cornerRadius: compact ? 7 : 9, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: compact ? 7 : 9, style: .continuous)
-                .strokeBorder(kind == .primary ? .clear : Theme.hairline, lineWidth: 0.5))
+            .foregroundStyle(foreground)
+            .background(background(pressed), in: shape)
+            .overlay {
+                if kind == .primary {
+                    // a faint top highlight, so the primary action reads as raised
+                    shape.fill(LinearGradient(colors: [.white.opacity(hovering ? 0.22 : 0.14), .clear],
+                                              startPoint: .top, endPoint: .center))
+                        .allowsHitTesting(false)
+                }
+            }
+            .overlay(shape.strokeBorder(kind == .primary ? .clear : Theme.hairline, lineWidth: 0.5))
+            .shadow(color: kind == .primary && enabled ? Theme.accent.opacity(hovering ? 0.35 : 0.18) : .clear,
+                    radius: hovering ? 7 : 4, y: 2)
+            .scaleEffect(pressed && !Motion.reduced ? 0.965 : 1)
             .opacity(enabled ? 1 : 0.45)
             .contentShape(Rectangle())
+            .onHover { h in withAnimation(Motion.quick) { hovering = h && enabled } }
+            .animation(Motion.quick, value: pressed)
+    }
+
+    private var foreground: Color {
+        switch kind {
+        case .primary: return Theme.onAccent
+        case .destructive: return Color(nsColor: .systemRed)
+        default: return .primary
+        }
     }
 
     private func background(_ pressed: Bool) -> Color {
         switch kind {
         case .primary: return Theme.accent.opacity(pressed ? 0.8 : 1)
-        case .secondary: return Color(nsColor: .controlColor).opacity(pressed ? 0.55 : 0.9)
-        case .destructive: return Color(nsColor: .systemRed).opacity(pressed ? 0.2 : 0.1)
-        case .plain: return pressed ? Color.primary.opacity(0.08) : .clear
+        case .secondary: return Color(nsColor: .controlColor).opacity(pressed ? 0.55 : hovering ? 1 : 0.85)
+        case .destructive: return Color(nsColor: .systemRed).opacity(pressed ? 0.22 : hovering ? 0.16 : 0.1)
+        case .plain: return pressed ? Color.primary.opacity(0.1) : hovering ? Color.primary.opacity(0.06) : .clear
         }
     }
 }
@@ -182,6 +267,7 @@ struct ToastHost: ViewModifier {
                     Image(systemName: t.kind == .error ? "exclamationmark.circle.fill"
                                     : t.kind == .success ? "checkmark.circle.fill" : "info.circle.fill")
                         .foregroundStyle(t.kind == .error ? Color(nsColor: .systemRed) : t.kind == .success ? Theme.accent : .secondary)
+                        .symbolEffect(.bounce, options: .nonRepeating, value: Motion.reduced ? 0 : t.id.hashValue)
                     Text(t.text).font(.system(size: 12.5)).lineLimit(3)
                 }
                 .padding(.horizontal, 12).padding(.vertical, 9)
@@ -189,10 +275,11 @@ struct ToastHost: ViewModifier {
                 .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 0.5))
                 .shadow(color: .black.opacity(0.15), radius: 8, y: 2)
                 .padding(12)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+                // Reduce Motion: it fades in place instead of sliding up.
+                .transition(Motion.reduced ? .opacity : .move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .animation(.spring(duration: 0.3), value: store.toast)
+        .animation(Motion.spring, value: store.toast)
     }
 }
 extension View {
@@ -213,4 +300,108 @@ enum Ago {
         let s = max(0, Int(now.timeIntervalSince(since)))
         return s < 60 ? "\(s)s" : "\(s / 60)m \(s % 60)s"
     }
+}
+
+// MARK: - Severity counts
+
+/// "🔴 1 blocker · 🟡 2 risk", the engine's summary line, drawn as small coloured dots
+/// with numbers instead of emoji. Anything it cannot parse is shown as the text it is.
+struct SeverityCounts: View {
+    let text: String
+    var size: CGFloat = 11.5
+
+    static func parse(_ text: String) -> [(Severity, Int)]? {
+        let parts = text.components(separatedBy: " · ")
+        var out: [(Severity, Int)] = []
+        for p in parts {
+            let words = p.split(separator: " ").map(String.init)
+            guard let n = words.compactMap({ Int($0) }).first,
+                  let word = words.last?.lowercased(),
+                  let sev = Severity.allCases.first(where: { word.hasPrefix($0.rawValue) }) else { return nil }
+            out.append((sev, n))
+        }
+        return out.isEmpty ? nil : out
+    }
+
+    var body: some View {
+        if let parsed = Self.parse(text) {
+            HStack(spacing: 9) {
+                ForEach(parsed, id: \.0) { sev, n in
+                    HStack(spacing: 4) {
+                        Circle().fill(Theme.color(for: sev).gradient).frame(width: 7, height: 7)
+                        Text(verbatim: "\(n) \(n == 1 ? sev.label.lowercased() : sev.plural)")
+                    }
+                }
+            }
+            .font(.system(size: size, weight: .medium))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .accessibilityElement(children: .combine)
+        } else {
+            Text(text).font(.system(size: size)).foregroundStyle(.secondary).lineLimit(1)
+        }
+    }
+}
+
+// MARK: - Tabs
+
+/// A segmented control whose selection glides between tabs. The system one snaps.
+struct GlideTabs<T: Hashable>: View {
+    struct Item { let value: T; let title: String; var count: Int = 0 }
+    let items: [Item]
+    @Binding var selection: T
+    @Namespace private var ns
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(items, id: \.value) { item in
+                let on = item.value == selection
+                Button { withAnimation(Motion.spring) { selection = item.value } } label: {
+                    HStack(spacing: 5) {
+                        Text(item.title)
+                        if item.count > 0 {
+                            Text(verbatim: "\(item.count)")
+                                .font(.system(size: 10.5, weight: .bold).monospacedDigit())
+                                .padding(.horizontal, 5).padding(.vertical, 1)
+                                .background(on ? Theme.accent.opacity(0.22) : Color.primary.opacity(0.08), in: Capsule())
+                                .foregroundStyle(on ? Theme.accent : .secondary)
+                                .contentTransition(.numericText())
+                        }
+                    }
+                    .font(.system(size: 12.5, weight: on ? .semibold : .medium))
+                    .foregroundStyle(on ? .primary : .secondary)
+                    .frame(maxWidth: .infinity).padding(.vertical, 6)
+                    .background {
+                        if on {
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(Color(nsColor: .controlBackgroundColor))
+                                .shadow(color: .black.opacity(0.12), radius: 2, y: 1)
+                                .matchedGeometryEffect(id: "tab", in: ns)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(on ? .isSelected : [])
+            }
+        }
+        .padding(3)
+        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+}
+
+// MARK: - Rows
+
+/// A list row that answers the pointer: a soft highlight, nothing more.
+struct HoverRow: ViewModifier {
+    @State private var hovering = false
+    func body(content: Content) -> some View {
+        content
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.primary.opacity(hovering ? 0.055 : 0)))
+            .onHover { h in withAnimation(Motion.quick) { hovering = h } }
+    }
+}
+extension View {
+    func hoverRow() -> some View { modifier(HoverRow()) }
 }

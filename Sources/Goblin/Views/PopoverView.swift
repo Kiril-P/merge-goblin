@@ -31,10 +31,12 @@ struct PopoverView: View {
                     } else {
                         ReviewField(input: input, store: store, onStarted: { _ in })
                     }
-                    if !store.liveJobs.isEmpty { liveSection }
+                    if !store.liveJobs.isEmpty { liveSection.transition(Motion.row) }
                     listSection
                 }
                 .padding(14)
+                .animation(Motion.spring, value: store.liveJobs.map(\.id))
+                .animation(Motion.spring, value: store.liveJobs.map(\.phase))
             }
             .scrollIndicators(.never)
             Divider().opacity(0.5)
@@ -52,6 +54,8 @@ struct PopoverView: View {
         HStack(spacing: 10) {
             GoblinAvatar(size: 34)
                 .opacity(store.snapshot.enabled || !store.snapshot.loaded ? 1 : 0.5)
+                .saturation(store.snapshot.enabled || !store.snapshot.loaded ? 1 : 0)
+                .modifier(Bob(active: store.snapshot.jobsActive > 0 || store.snapshot.state == "reviewing"))
             VStack(alignment: .leading, spacing: 1) {
                 Text("Merge Goblin").font(.system(size: 14, weight: .bold))
                 Text(subtitle).font(.system(size: 11.5)).foregroundStyle(.secondary).lineLimit(1)
@@ -60,6 +64,20 @@ struct PopoverView: View {
             StatePill(store: store)
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
+        .background {
+            // a faint wash of the state's colour behind the header: green on duty, blue at
+            // work, grey when off. It changes with the state, smoothly.
+            LinearGradient(colors: [headerTint.opacity(0.13), headerTint.opacity(0.0)], startPoint: .top, endPoint: .bottom)
+                .animation(Motion.spring, value: headerTint)
+        }
+    }
+
+    private var headerTint: Color {
+        let s = store.snapshot
+        if !s.enabled || !s.setupComplete { return .gray }
+        if s.jobsActive > 0 || s.state == "reviewing" { return Color(nsColor: .systemBlue) }
+        if s.snoozeUntil != nil || s.state == "paused" { return Color(nsColor: .systemYellow) }
+        return Theme.accent
     }
 
     private var subtitle: String {
@@ -87,6 +105,7 @@ struct PopoverView: View {
             SectionLabel(text: store.activeJobs.isEmpty ? "Ready to read" : "In progress")
             ForEach(store.liveJobs.prefix(5)) { job in
                 JobRow(job: job, store: store) { windows.showJob($0.id) }
+                    .transition(Motion.row)
             }
         }
     }
@@ -95,10 +114,9 @@ struct PopoverView: View {
 
     private var listSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Picker("", selection: $tab) {
-                Text(verbatim: "Waiting for you\(store.queue.isEmpty ? "" : " (\(store.queue.count))")").tag(Tab.queue)
-                Text("Recent").tag(Tab.recent)
-            }.pickerStyle(.segmented).labelsHidden()
+            GlideTabs(items: [.init(value: Tab.queue, title: "Waiting for you", count: store.queue.count),
+                              .init(value: Tab.recent, title: "Recent")],
+                      selection: $tab)
 
             switch tab {
             case .queue:
@@ -108,13 +126,14 @@ struct PopoverView: View {
                                  ? "Add a repository in Settings and the Goblin will watch it."
                                  : "PRs that ask for your review show up here.")
                 } else {
-                    ForEach(store.queue.prefix(8)) { pr in
+                    ForEach(Array(store.queue.prefix(8).enumerated()), id: \.element.id) { i, pr in
                         QueueRow(pr: pr, store: store) { pr in
                             Task {
                                 input.repoChoice = nil
                                 input.text = "\(pr.repo)#\(pr.number)"
                             }
                         }
+                        .arrive(Double(i) * 0.035)
                     }
                 }
             case .recent:
@@ -122,11 +141,15 @@ struct PopoverView: View {
                 if items.isEmpty {
                     EmptyState(symbol: "clock", mascot: .idleWave, title: "No reviews yet", subtitle: "Reviews you ask for, and the ones the Goblin does on its own, land here.")
                 } else {
-                    StatsCard(store: store)
-                    ForEach(items.prefix(10)) { RecentRow(item: $0, store: store) { windows.showJob($0.id) } }
+                    StatsCard(store: store).arrive()
+                    ForEach(Array(items.prefix(10).enumerated()), id: \.element.id) { i, item in
+                        RecentRow(item: item, store: store) { windows.showJob($0.id) }
+                            .arrive(Double(i) * 0.035)
+                    }
                 }
             }
         }
+        .id(tab)   // each tab arrives fresh, so its rows animate in
     }
 
     // MARK: footer
@@ -208,9 +231,17 @@ struct StatePill: View {
             }
         } label: {
             HStack(spacing: 6) {
-                Circle().fill(color).frame(width: 8, height: 8)
+                ZStack {
+                    if busy {
+                        Circle().stroke(color.opacity(0.6), lineWidth: 1.5).frame(width: 8, height: 8)
+                            .modifier(Ripple())
+                    }
+                    Circle().fill(color.gradient).frame(width: 8, height: 8)
+                }
                 Text(label).font(.system(size: 12, weight: .semibold))
+                    .contentTransition(.interpolate)
             }
+            .animation(Motion.spring, value: label)
             .padding(.horizontal, 10).padding(.vertical, 5)
             .background(color.opacity(0.14), in: Capsule())
             .foregroundStyle(color)
@@ -218,6 +249,8 @@ struct StatePill: View {
         .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
         .help(s.statusLine)
     }
+
+    private var busy: Bool { store.snapshot.jobsActive > 0 || store.snapshot.state == "reviewing" }
 
     private var label: String {
         let s = store.snapshot
@@ -254,5 +287,33 @@ struct EmptyState: View {
             Text(subtitle).font(.system(size: 12)).foregroundStyle(.secondary).multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity).padding(.vertical, 22).padding(.horizontal, 12)
+    }
+}
+
+/// A gentle up-and-down while the goblin is working. Off under Reduce Motion.
+struct Bob: ViewModifier {
+    let active: Bool
+    @State private var up = false
+    func body(content: Content) -> some View {
+        content
+            .offset(y: active && up ? -2 : 0)
+            .rotationEffect(.degrees(active && up ? -3 : 0), anchor: .bottom)
+            .onChange(of: active, initial: true) { _, on in
+                guard on, !Motion.reduced else { up = false; return }
+                withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) { up = true }
+            }
+    }
+}
+
+/// A ring that spreads out from the status dot while a review runs.
+struct Ripple: ViewModifier {
+    @State private var on = false
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(on ? 2.4 : 1).opacity(on ? 0 : 0.9)
+            .onAppear {
+                guard !Motion.reduced else { return }
+                withAnimation(.easeOut(duration: 1.4).repeatForever(autoreverses: false)) { on = true }
+            }
     }
 }

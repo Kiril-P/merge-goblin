@@ -63,12 +63,14 @@ struct JobRow: View {
     var open: (Job) -> Void
 
     var body: some View {
-        Card(padding: 11) {
+        Card(padding: 11, accent: Theme.color(for: job.phase), interactive: true) {
             VStack(alignment: .leading, spacing: 9) {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: Theme.symbol(for: job.phase))
                         .foregroundStyle(Theme.color(for: job.phase))
                         .font(.system(size: 14, weight: .semibold))
+                        .symbolEffect(.pulse, isActive: job.phase.isActive && !Motion.reduced)
+                        .contentTransition(.symbolEffect(.replace))
                         .frame(width: 18)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(job.displayTitle).font(.system(size: 13, weight: .semibold)).lineLimit(2)
@@ -92,8 +94,10 @@ struct JobRow: View {
                         Button("Cancel") { store.cancel(job) }.buttonStyle(.goblinQuiet)
                     }
                 } else if job.phase == .ready {
+                    // the counts get a line of their own: squeezed next to three buttons
+                    // they were cut down to "1…"
+                    if !job.counts.isEmpty { SeverityCounts(text: job.counts, size: 11.5).padding(.leading, 26) }
                     HStack(spacing: 8) {
-                        if !job.counts.isEmpty { Text(job.counts).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1) }
                         Spacer()
                         Button("Discard") { store.cancel(job) }.buttonStyle(.goblinQuiet)
                         // Straight from the card: no need to open the review first. It posts
@@ -124,19 +128,39 @@ struct RecentRow: View {
         Button(action: act) {
             HStack(alignment: .top, spacing: 9) {
                 Image(systemName: symbol).foregroundStyle(tint).font(.system(size: 13, weight: .semibold)).frame(width: 18)
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(title).font(.system(size: 12.5, weight: .medium)).lineLimit(1)
-                    Text(subtitle).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                    if let counts {
+                        HStack(spacing: 5) {
+                            Text(verbatim: place).font(.system(size: 11)).foregroundStyle(.secondary)
+                            SeverityCounts(text: counts, size: 11)
+                        }
+                    } else {
+                        Text(subtitle).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                    }
                 }
                 Spacer(minLength: 4)
                 Text(Ago.short(item.at)).font(.system(size: 11)).foregroundStyle(.tertiary)
             }
-            .padding(.horizontal, 6).padding(.vertical, 5)
+            .padding(.horizontal, 6).padding(.vertical, 6)
             .contentShape(Rectangle())
-        }.buttonStyle(.plain)
+        }
+        .buttonStyle(.plain)
+        .hoverRow()
     }
 
     private var title: String { item.job?.displayTitle ?? item.entry?.title ?? "" }
+
+    private var place: String {
+        if let j = item.job { return "\(j.shortRepo) #\(j.number)" }
+        if let e = item.entry { return "\(e.shortRepo) #\(e.number)" }
+        return ""
+    }
+    /// A finished review's severity line, when there is one to draw.
+    private var counts: String? {
+        guard let j = item.job, j.phase == .done, !j.counts.isEmpty, SeverityCounts.parse(j.counts) != nil else { return nil }
+        return j.counts
+    }
 
     private var subtitle: String {
         if let j = item.job {
@@ -184,8 +208,9 @@ struct QueueRow: View {
             Spacer(minLength: 4)
             Button("Review") { review(pr) }.buttonStyle(.goblinSmall)
         }
-        .padding(.horizontal, 6).padding(.vertical, 5)
+        .padding(.horizontal, 6).padding(.vertical, 6)
         .contentShape(Rectangle())
+        .hoverRow()
         .onTapGesture { store.openURL(pr.url) }
         .accessibilityAction(named: "Open the pull request") { store.openURL(pr.url) }
     }

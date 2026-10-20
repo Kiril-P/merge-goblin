@@ -22,6 +22,15 @@ enum Severity: String, CaseIterable, Identifiable {
         case .question: return "Question"
         }
     }
+    var plural: String {
+        switch self {
+        case .blocker: return "blockers"
+        case .convention: return "conventions"
+        case .risk: return "risks"
+        case .nit: return "nits"
+        case .question: return "questions"
+        }
+    }
     var emoji: String {
         switch self {
         case .blocker: return "🔴"
