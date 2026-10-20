@@ -43,16 +43,17 @@ struct PopoverView: View {
     // MARK: header
 
     private var header: some View {
-        HStack(spacing: 10) {
-            GoblinAvatar(size: 34)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Merge Goblin").font(.system(size: 14, weight: .bold))
+        VStack(spacing: 8) {
+            GoblinAvatar(size: 76)
+                .shadow(color: .black.opacity(0.28), radius: 10, y: 4)
+            VStack(spacing: 2) {
+                Text("Merge Goblin").font(.system(size: 16, weight: .bold))
                 Text(subtitle).font(.system(size: 11.5)).foregroundStyle(.secondary).lineLimit(1)
             }
-            Spacer()
             StatePill(store: store)
         }
-        .padding(.horizontal, 14).padding(.vertical, 11)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 14).padding(.top, 14).padding(.bottom, 12)
     }
 
     private var subtitle: String {
