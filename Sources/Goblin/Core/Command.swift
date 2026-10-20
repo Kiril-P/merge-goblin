@@ -201,6 +201,7 @@ enum Command: Equatable {
     case inbox(refresh: Bool)
     case accounts
     case providers(refresh: Bool)
+    case providerModels(ProviderId, refresh: Bool)
     case repoSearch(query: String, limit: Int)   // query ^[A-Za-z0-9 ._/-]{0,80}$, limit 1...200
 
     // first-run wizard
@@ -332,6 +333,9 @@ enum Command: Equatable {
         case .providers(let refresh):
             return .cli(argv: refresh ? ["provider", "list", "--refresh", "--json"]
                                       : ["provider", "list", "--json"],
+                        timeout: .discovery, mutating: false, json: true)
+        case .providerModels(let provider, let refresh):
+            return .cli(argv: ["provider", "models", provider.rawValue] + (refresh ? ["--refresh"] : []),
                         timeout: .discovery, mutating: false, json: true)
         case .repoSearch(let query, let limit):
             return .cli(argv: ["repo-search", "--json", "--limit", String(limit), "--query", query],

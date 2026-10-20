@@ -94,10 +94,13 @@ enum BarIcon {
         let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { _ in
             guard let ctx = NSGraphicsContext.current?.cgContext else { return true }
 
-            // The goblin sits up and to the left, leaving the bottom-right corner
-            // for the badge. Both boxes are in the 18x18 image's coordinates.
-            let goblinRect = NSRect(x: 0.0, y: 3.0, width: 15.0, height: 15.0)
+            // With no badge the goblin is centred in the 18pt slot. With one he moves up
+            // and to the left, leaving the bottom-right corner for it. Both boxes are
+            // in the 18x18 image's coordinates.
             let badgeRect = NSRect(x: 9.5, y: 0.0, width: 8.5, height: 8.5)
+            let hasBadge = badgePath(for: glyph, in: badgeRect, frame: frame) != nil
+            let goblinRect = hasBadge ? NSRect(x: 0.0, y: 3.0, width: 15.0, height: 15.0)
+                                      : NSRect(x: 1.0, y: 1.0, width: 16.0, height: 16.0)
 
             ctx.saveGState()
             // "off" reads as a dimmed goblin. The spec asked for an outline; at

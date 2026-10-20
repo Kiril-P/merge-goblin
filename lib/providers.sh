@@ -84,3 +84,29 @@ providers_pick() {
   done
   return 1
 }
+
+# providers_models <name> [--refresh] -> [{id,label}]
+#
+# What a person may choose from, so the app offers a menu of real models rather than
+# a text box. Cached a day: listing them runs the provider's CLI, which is slow. An
+# empty answer is never cached, or one bad run would hide the list until it expired.
+providers_models() {
+  local name="$1" refresh="${2:-}" cache out age
+  case " $GOBLIN_PROVIDERS " in *" $name "*) ;; *) echo '[]'; return 2 ;; esac
+  cache="$GOBLIN_HOME/models-$name.json"
+  if [ "$refresh" != "--refresh" ] && [ -f "$cache" ]; then
+    age=$(( $(now_epoch) - $(stat -f %m "$cache" 2>/dev/null || echo 0) ))
+    if [ "$age" -lt 86400 ] && jq -e 'length > 0' "$cache" >/dev/null 2>&1; then cat "$cache"; return 0; fi
+  fi
+  providers_load
+  out="$("provider_${name}_models" 2>/dev/null)"
+  if printf '%s' "$out" | jq -e 'type == "array" and length > 0' >/dev/null 2>&1; then
+    mkdir -p "$GOBLIN_HOME" 2>/dev/null
+    printf '%s' "$out" | jq -c . | atomic_write "$cache"
+    printf '%s' "$out" | jq -c .
+  elif [ -f "$cache" ] && jq -e 'length > 0' "$cache" >/dev/null 2>&1; then
+    cat "$cache"          # the CLI failed this time: a stale list beats none
+  else
+    echo '[]'
+  fi
+}

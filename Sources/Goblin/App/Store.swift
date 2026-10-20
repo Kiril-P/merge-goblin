@@ -78,6 +78,9 @@ final class AppStore {
     private(set) var queue: [QueuedPR] = []
     private(set) var history: [HistoryEntry] = []
     private(set) var providers: [ProviderInfo] = []
+    /// provider name -> the models it offers (`goblin provider models`). Loaded on first use.
+    private(set) var modelCatalog: [String: [ModelOption]] = [:]
+    private var modelsLoading: Set<String> = []
     private(set) var providersState: LoadState = .idle
     private(set) var doctor: [DoctorCheck] = []
     private(set) var doctorState: LoadState = .idle
@@ -353,6 +356,23 @@ final class AppStore {
         }
     }
 
+    /// The models a provider offers. Quietly keeps whatever it had if the CLI fails, and
+    /// falls back to the built-in few so the menu is never empty for a provider that works.
+    func loadModels(_ provider: String, refresh: Bool = false) async {
+        guard let id = ProviderId(rawValue: provider), cliConfigured,
+              refresh || modelCatalog[provider] == nil, modelsLoading.insert(provider).inserted else { return }
+        defer { modelsLoading.remove(provider) }
+        if let out = try? await CLI.shared.run(.providerModels(id, refresh: refresh)) {
+            let options = ModelCatalog.parse(JSON.parse(out.stdout))
+            if !options.isEmpty { modelCatalog[provider] = options; return }
+        }
+        if modelCatalog[provider] == nil {
+            modelCatalog[provider] = ProviderInfo.fallbackModels(provider).map { ModelOption(id: $0, label: $0) }
+        }
+    }
+
+    func isLoadingModels(_ provider: String) -> Bool { modelsLoading.contains(provider) && modelCatalog[provider] == nil }
+
     func runDoctor(fix: Bool = false) async {
         doctorState = .loading
         do {
@@ -491,6 +511,11 @@ final class AppStore {
         doctor = checks
         doctorState = .loaded
         accounts = accs
+        modelCatalog = [
+            "claude": [ModelOption(id: "sonnet", label: "Sonnet (latest)"), ModelOption(id: "opus", label: "Opus (latest)")],
+            "codex": [ModelOption(id: "gpt-6.1-sol", label: "GPT-6.1-Sol")],
+            "cursor": [ModelOption(id: "composer-2.5", label: "Composer 2.5")],
+        ]
     }
 
     // MARK: settings & plumbing

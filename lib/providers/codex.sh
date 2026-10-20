@@ -88,3 +88,12 @@ provider_codex_review() {
   GOBLIN_P_ERRKIND=bad_output; GOBLIN_P_ERRMSG="no JSON in final message"
   return 2
 }
+
+# Straight from the CLI's own catalog, so the list is whatever this account can use.
+provider_codex_models() {
+  local bin; bin="$(provider_codex_bin 2>/dev/null || true)"
+  [ -n "$bin" ] || { echo '[]'; return 0; }
+  "$bin" debug models 2>/dev/null \
+    | jq -c '[.models[]? | select((.visibility // "list") == "list") | {id: .slug, label: (.display_name // .slug)}]' 2>/dev/null \
+    || echo '[]'
+}

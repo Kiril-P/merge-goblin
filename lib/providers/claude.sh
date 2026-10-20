@@ -90,3 +90,17 @@ provider_claude_review() {
   GOBLIN_P_ERRKIND=bad_output; GOBLIN_P_ERRMSG="no JSON in response"
   return 2
 }
+
+# The models `claude --model` accepts. Aliases follow the latest release of each
+# family; the pinned ids are for people who want a review to stay on one version.
+provider_claude_models() {
+  jq -nc '[
+    {id:"sonnet", label:"Sonnet (latest)"},
+    {id:"opus",   label:"Opus (latest)"},
+    {id:"haiku",  label:"Haiku (latest)"},
+    {id:"claude-sonnet-5-5", label:"Sonnet 5.5"},
+    {id:"claude-opus-5-5",   label:"Opus 5.5"},
+    {id:"claude-haiku-5-5",  label:"Haiku 5.5"},
+    {id:"claude-fable-5-1",  label:"Fable 5.1"}
+  ]'
+}

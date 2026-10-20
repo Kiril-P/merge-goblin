@@ -249,9 +249,9 @@ struct ReviewField: View {
                         ForEach(store.providers.filter(\.ready)) { p in Text(p.displayName).tag(p.name) }
                     }
                     if let p = store.providers.first(where: { $0.name == (input.options.provider?.rawValue ?? store.snapshot.providerId) }) {
-                        Picker("Model", selection: $input.options.model) {
-                            Text("Default").tag("")
-                            ForEach(p.suggestedModels, id: \.self) { Text($0).tag($0) }
+                        HStack {
+                            Text("Model")
+                            ModelMenu(store: store, provider: p.name, selection: $input.options.model, defaultLabel: "Default")
                         }
                     }
                 }

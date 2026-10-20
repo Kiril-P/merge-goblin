@@ -94,9 +94,10 @@ cmd_ctl() {
                 'map(. + {current: (.name == $cur), model: ($models[.name] // "")})' ;;
             *) providers_report ;;
           esac ;;
+        models) providers_models "${1:-}" "${2:-}" ;;
         use)   providers_set "$1" ;;
         which|"") echo "$(cfg_get '.provider' claude) ($(cfg_get ".providers.$(cfg_get '.provider' claude).model" 'default model'))" ;;
-        *) echo "usage: $GOBLIN_SLUG provider [list|use <id>|which]" >&2; return 2 ;;
+        *) echo "usage: $GOBLIN_SLUG provider [list|models <id>|use <id>|which]" >&2; return 2 ;;
       esac ;;
 
     fleet)

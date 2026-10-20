@@ -212,16 +212,8 @@ struct ReviewerPane: View {
 private struct ProviderCard: View {
     let store: AppStore
     let provider: ProviderInfo
-    @State private var draft: String
-
-    init(store: AppStore, provider: ProviderInfo) {
-        self.store = store; self.provider = provider
-        _draft = State(initialValue: store.snapshot.settings.models[provider.name] ?? provider.model)
-    }
-
     private var saved: String { store.snapshot.settings.models[provider.name] ?? provider.model }
     private var isCurrent: Bool { store.snapshot.providerId == provider.name }
-    private var draftValid: Bool { Pattern.model.accepts(draft) }
 
     var body: some View {
         Card(padding: 14) {
@@ -251,7 +243,6 @@ private struct ProviderCard: View {
                 if provider.ready { modelRow } else { notReady }
             }
         }
-        .onChange(of: saved) { _, new in draft = new }
     }
 
     private var symbol: String {
@@ -275,33 +266,17 @@ private struct ProviderCard: View {
     private var modelRow: some View {
         HStack(spacing: 8) {
             Text("Model").font(.system(size: 12.5, weight: .medium)).foregroundStyle(.secondary).frame(width: 46, alignment: .leading)
-            TextField("provider default", text: $draft)
-                .textFieldStyle(.plain).font(.system(size: 12.5, design: .monospaced))
-                .padding(.horizontal, 9).padding(.vertical, 5)
-                .background(Theme.fieldFill, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .strokeBorder(draftValid ? Theme.hairline : Color(nsColor: .systemRed).opacity(0.7), lineWidth: 0.5))
-                .onSubmit(save)
-            if !provider.suggestedModels.isEmpty {
-                Menu {
-                    Button("Provider default") { draft = ""; save() }
-                    Divider()
-                    ForEach(provider.suggestedModels, id: \.self) { m in Button(m) { draft = m; save() } }
-                } label: { Image(systemName: "chevron.up.chevron.down").font(.system(size: 11, weight: .semibold)) }
-                    .menuStyle(.button).buttonStyle(.goblinSmall).menuIndicator(.hidden).fixedSize()
-                    .help("Suggested models")
-            }
-            Button("Save", action: save).buttonStyle(.goblinSmall).disabled(draft == saved || !draftValid)
+            ModelMenu(store: store, provider: provider.name,
+                      selection: Binding(get: { saved }, set: { choose($0) }))
         }
     }
 
-    private func save() {
-        guard draftValid, draft != saved, let id = ProviderId(rawValue: provider.name) else { return }
+    private func choose(_ model: String) {
+        guard model != saved, let id = ProviderId(rawValue: provider.name) else { return }
+        let label = ModelCatalog.label(for: model, in: store.modelCatalog[provider.name] ?? [])
         Task {
-            if await store.perform(.setProviderModel(provider: id, model: draft),
-                                   success: draft.isEmpty ? "Using \(provider.displayName)'s default model." : "Model set to \(draft).") == false {
-                draft = saved
-            }
+            await store.perform(.setProviderModel(provider: id, model: model),
+                                success: model.isEmpty ? "Using \(provider.displayName)'s default model." : "Model set to \(label).")
         }
     }
 

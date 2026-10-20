@@ -43,22 +43,17 @@ struct PopoverView: View {
     // MARK: header
 
     private var header: some View {
-        VStack(spacing: 8) {
-            if store.snapshot.enabled || !store.snapshot.loaded {
-                GoblinAvatar(size: 76)
-                    .shadow(color: .black.opacity(0.28), radius: 10, y: 4)
-            } else {
-                // off: he is asleep. Same footprint as the icon so nothing below moves.
-                Mascot(.sleeping, size: 76).frame(width: 76, height: 76)
-            }
-            VStack(spacing: 2) {
-                Text("Merge Goblin").font(.system(size: 16, weight: .bold))
+        HStack(spacing: 10) {
+            GoblinAvatar(size: 34)
+                .opacity(store.snapshot.enabled || !store.snapshot.loaded ? 1 : 0.5)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Merge Goblin").font(.system(size: 14, weight: .bold))
                 Text(subtitle).font(.system(size: 11.5)).foregroundStyle(.secondary).lineLimit(1)
             }
+            Spacer()
             StatePill(store: store)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 14).padding(.top, 14).padding(.bottom, 12)
+        .padding(.horizontal, 14).padding(.vertical, 11)
     }
 
     private var subtitle: String {

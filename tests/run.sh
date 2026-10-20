@@ -880,6 +880,26 @@ test_provider_list_json_is_the_shape_the_app_decodes() {
   review_env_done
 }
 
+test_provider_models_are_a_list_of_real_choices() {
+  # The app offers these as a menu instead of a text box, so the shape and the
+  # "never cache an empty answer" rule are what keep that menu usable.
+  review_env
+  local out
+  out="$("$G" provider models claude 2>/dev/null)"
+  printf '%s' "$out" | jq -e 'length >= 3 and all(.[]; (.id|length) > 0 and (.label|length) > 0)' >/dev/null \
+    || { echo "claude models: $out"; return 1; }
+  [ -s "$GOBLIN_HOME/models-claude.json" ] || { echo "a good list was not cached"; return 1; }
+  # whatever codex answers on this machine: an empty list must not be cached, a real one is
+  out="$("$G" provider models codex 2>/dev/null)"
+  if [ "$out" = "[]" ]; then
+    [ ! -e "$GOBLIN_HOME/models-codex.json" ] || { echo "an empty list was cached"; return 1; }
+  else
+    [ -s "$GOBLIN_HOME/models-codex.json" ] || { echo "a good list was not cached"; return 1; }
+  fi
+  "$G" provider models nope >/dev/null 2>&1; eq 2 "$?" || return 1
+  review_env_done
+}
+
 # ---------------------------------------------------------------- update ---
 test_update_version_compare() {
   setup
@@ -1382,6 +1402,7 @@ t "review: cancel is not a failure"         test_review_cancel_stops_the_model_a
 t "review: interrupted job reported"        test_review_interrupted_job_is_reported_not_spun
 t "review: model override is not persisted" test_review_provider_override_is_not_persisted
 t "provider: list --json matches the app"   test_provider_list_json_is_the_shape_the_app_decodes
+t "provider: models are real choices"      test_provider_models_are_a_list_of_real_choices
 
 printf '\n  %s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -gt 0 ] && { printf '  failed:%b\n\n' "$FAILED"; exit 1; }

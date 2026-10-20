@@ -79,3 +79,14 @@ provider_cursor_review() {
   GOBLIN_P_ERRKIND=bad_output; GOBLIN_P_ERRMSG="no JSON in response"
   return 2
 }
+
+# `cursor-agent --list-models` prints "id - Label" lines between a header and a tip.
+# Labels carry zero-width characters, so everything non-ASCII is dropped first.
+provider_cursor_models() {
+  local bin; bin="$(provider_cursor_bin 2>/dev/null || true)"
+  [ -n "$bin" ] || { echo '[]'; return 0; }
+  "$bin" --list-models 2>/dev/null | LC_ALL=C tr -cd '\11\12\15\40-\176' \
+    | sed -n 's/^\([A-Za-z0-9._:-][A-Za-z0-9._:-]*\) - \(.*[^ ]\) *$/\1\t\2/p' \
+    | jq -Rnc '[inputs | split("\t") | {id: .[0], label: (.[1] | sub(" *\\((current|default)\\)$"; ""))}]' 2>/dev/null \
+    || echo '[]'
+}

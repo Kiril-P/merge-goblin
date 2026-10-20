@@ -362,14 +362,9 @@ struct ProviderInfo: Identifiable, Equatable {
         default: return note
         }
     }
-    /// Models worth offering in a picker. A custom value is always allowed too.
-    var suggestedModels: [String] {
-        switch name {
-        case "claude": return ["sonnet", "opus", "haiku"]
-        case "codex": return ["gpt-5-codex", "gpt-5", "o4-mini"]
-        case "cursor": return ["composer-2.5", "auto", "sonnet-4.5", "gpt-5"]
-        default: return []
-        }
+    /// Only used when `goblin provider models` fails: a short list that is always valid.
+    static func fallbackModels(_ name: String) -> [String] {
+        name == "claude" ? ["sonnet", "opus", "haiku"] : []
     }
 
     init(json: JSON) {
