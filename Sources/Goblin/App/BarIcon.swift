@@ -81,12 +81,11 @@ enum BarIcon {
 
     private static var cache: [String: NSImage] = [:]
 
-    /// The bundled vector goblin. Loaded once; nil is survivable (see fallback).
-    private static let pdf: NSPDFImageRep? = {
-        guard let url = Bundle.main.resourceURL?
-                .appendingPathComponent("goblin-bar.pdf"),
-              let data = try? Data(contentsOf: url) else { return nil }
-        return NSPDFImageRep(data: data)
+    /// The bundled goblin: a black-and-transparent PNG at 6x, trimmed to its bounds
+    /// (scripts/make-icons.swift). Loaded once; nil is survivable (see fallback).
+    private static let glyph: NSImage? = {
+        guard let url = Bundle.main.resourceURL?.appendingPathComponent("goblin-bar.png") else { return nil }
+        return NSImage(contentsOf: url)
     }()
 
     // MARK: - Rendering
@@ -130,10 +129,9 @@ enum BarIcon {
     }
 
     private static func drawGoblin(in rect: NSRect) {
-        if let pdf {
-            // NSPDFImageRep scales its own media box to the destination rect, and
-            // it is vector, so this is crisp at 1x, 2x and 3x with no @2x asset.
-            pdf.draw(in: rect)
+        if let glyph {
+            NSGraphicsContext.current?.imageInterpolation = .high
+            glyph.draw(in: rect)
         } else {
             NSColor.black.setFill()
             fallbackGoblin(in: rect).fill()
@@ -142,14 +140,14 @@ enum BarIcon {
 
     // MARK: - The code-drawn fallback
     //
-    // A missing or corrupt PDF must never produce an INVISIBLE status item: the
+    // A missing or corrupt image must never produce an INVISIBLE status item: the
     // app would look like it had failed to launch, and the only way to quit it
-    // would be `killall`. This is deliberately simpler than the PDF — it only has
+    // would be `killall`. This is deliberately simpler than the real glyph — it only has
     // to say "goblin" at 18 points.
 
     private static func fallbackGoblin(in rect: NSRect) -> NSBezierPath {
         // Design space is 64x64 with y pointing DOWN: the same numbers as
-        // design/goblin-bar.svg, which is what goblin-bar.pdf is made from.
+        // design/goblin-bar.svg. It is a plainer goblin than the bundled glyph.
         let path = NSBezierPath()
         func p(_ x: CGFloat, _ y: CGFloat) -> NSPoint {
             NSPoint(x: rect.minX + (x / 64.0) * rect.width,

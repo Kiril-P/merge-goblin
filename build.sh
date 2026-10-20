@@ -47,7 +47,7 @@ BIN="$( cd "$ROOT" && swift build -c release ${ARCHS[@]+"${ARCHS[@]}"} --show-bi
 STAGE="$(mktemp -d)/$NAME.app"
 mkdir -p "$STAGE/Contents/MacOS" "$STAGE/Contents/Resources/engine"
 cp "$BIN" "$STAGE/Contents/MacOS/$EXEC_NAME"
-cp "$ROOT"/Sources/Goblin/Resources/goblin.icns "$ROOT"/Sources/Goblin/Resources/goblin-bar.pdf "$ROOT"/Sources/Goblin/Resources/goblin-avatar.png "$STAGE/Contents/Resources/"
+cp "$ROOT"/Sources/Goblin/Resources/*.icns "$ROOT"/Sources/Goblin/Resources/*.png "$STAGE/Contents/Resources/"
 
 ENG="$STAGE/Contents/Resources/engine"
 mkdir -p "$ENG/bin" "$ENG/share" "$ENG/templates"

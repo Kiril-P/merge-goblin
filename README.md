@@ -1,6 +1,6 @@
-<p align="center"><img src="design/goblin-app.svg" width="128" alt="The Merge Goblin"></p>
+![The Merge Goblin guarding the merge button](design/hero.png)
 
-# 👺 The Merge Goblin
+# The Merge Goblin
 
 ![An actual Merge Goblin inline review, with author anonymized](docs/media/merge-goblin-inline-review.png)
 

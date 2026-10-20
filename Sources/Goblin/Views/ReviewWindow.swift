@@ -71,6 +71,7 @@ private struct RunningPane: View {
         VStack(alignment: .leading, spacing: 22) {
             JobHeader(job: job, store: store)
             Card(padding: 20) {
+                HStack(alignment: .center, spacing: 18) {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
                         ProgressView().controlSize(.small)
@@ -82,6 +83,8 @@ private struct RunningPane: View {
                     }
                     PhaseTrack(phase: job.phase, labels: true)
                     Text(blurb).font(.system(size: 12.5)).foregroundStyle(.secondary)
+                }
+                Mascot(.reviewing, size: 128)
                 }
             }
             HStack {
@@ -342,6 +345,7 @@ private struct FailedPane: View {
         VStack(alignment: .leading, spacing: 20) {
             JobHeader(job: job, store: store)
             Card(padding: 20) {
+                HStack(alignment: .center, spacing: 18) {
                 VStack(alignment: .leading, spacing: 10) {
                     Label("The review didn't finish", systemImage: "exclamationmark.triangle.fill")
                         .font(.system(size: 16, weight: .semibold)).foregroundStyle(Color(nsColor: .systemRed))
@@ -350,6 +354,9 @@ private struct FailedPane: View {
                         Button("Try again") { retry() }.buttonStyle(.goblinPrimary)
                         Button("Open the log") { store.openLog() }.buttonStyle(.goblin)
                     }
+                }
+                Spacer(minLength: 0)
+                Mascot(.alert, size: 112)
                 }
             }
             Spacer()

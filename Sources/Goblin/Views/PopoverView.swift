@@ -44,8 +44,13 @@ struct PopoverView: View {
 
     private var header: some View {
         VStack(spacing: 8) {
-            GoblinAvatar(size: 76)
-                .shadow(color: .black.opacity(0.28), radius: 10, y: 4)
+            if store.snapshot.enabled || !store.snapshot.loaded {
+                GoblinAvatar(size: 76)
+                    .shadow(color: .black.opacity(0.28), radius: 10, y: 4)
+            } else {
+                // off: he is asleep. Same footprint as the icon so nothing below moves.
+                Mascot(.sleeping, size: 76).frame(width: 76, height: 76)
+            }
             VStack(spacing: 2) {
                 Text("Merge Goblin").font(.system(size: 16, weight: .bold))
                 Text(subtitle).font(.system(size: 11.5)).foregroundStyle(.secondary).lineLimit(1)
@@ -97,7 +102,7 @@ struct PopoverView: View {
             switch tab {
             case .queue:
                 if store.queue.isEmpty {
-                    EmptyState(symbol: "tray", title: "Nothing is waiting on you",
+                    EmptyState(symbol: "tray", mascot: .empty, title: "Nothing is waiting on you",
                                subtitle: store.snapshot.repos.isEmpty
                                  ? "Add a repository in Settings and the Goblin will watch it."
                                  : "PRs that ask for your review show up here.")
@@ -114,7 +119,7 @@ struct PopoverView: View {
             case .recent:
                 let items = store.recent
                 if items.isEmpty {
-                    EmptyState(symbol: "clock", title: "No reviews yet", subtitle: "Reviews you ask for, and the ones the Goblin does on its own, land here.")
+                    EmptyState(symbol: "clock", mascot: .idleWave, title: "No reviews yet", subtitle: "Reviews you ask for, and the ones the Goblin does on its own, land here.")
                 } else {
                     ForEach(items.prefix(10)) { RecentRow(item: $0, store: store) { windows.showJob($0.id) } }
                 }
@@ -171,6 +176,21 @@ struct GoblinAvatar: View {
     }
 }
 
+/// The goblin in a pose, for empty states and moods. Transparent PNGs from design/mascot.
+struct Mascot: View {
+    enum Pose: String { case idleWave = "idle-wave", sleeping, reviewing, alert, empty }
+    let pose: Pose
+    var size: CGFloat
+    init(_ pose: Pose, size: CGFloat = 96) { self.pose = pose; self.size = size }
+    var body: some View {
+        if let url = Bundle.main.url(forResource: "mascot-\(pose.rawValue)", withExtension: "png"),
+           let img = NSImage(contentsOf: url) {
+            Image(nsImage: img).resizable().interpolation(.high).scaledToFit()
+                .frame(width: size, height: size).accessibilityHidden(true)
+        }
+    }
+}
+
 /// The on/off state as one tappable pill: green and "on duty" when working, and a
 /// menu for the other states. It replaces a toggle plus a status line.
 struct StatePill: View {
@@ -218,11 +238,16 @@ struct StatePill: View {
 
 struct EmptyState: View {
     let symbol: String
+    var mascot: Mascot.Pose? = nil
     let title: String
     let subtitle: String
     var body: some View {
         VStack(spacing: 6) {
-            Image(systemName: symbol).font(.system(size: 22)).foregroundStyle(.tertiary)
+            if let mascot {
+                Mascot(mascot, size: 96)
+            } else {
+                Image(systemName: symbol).font(.system(size: 22)).foregroundStyle(.tertiary)
+            }
             Text(title).font(.system(size: 13, weight: .semibold))
             Text(subtitle).font(.system(size: 12)).foregroundStyle(.secondary).multilineTextAlignment(.center)
         }
