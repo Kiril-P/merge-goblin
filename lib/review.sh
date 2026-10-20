@@ -201,7 +201,7 @@ review_print_outcome() {
   echo
   case "$ph" in
     ready)
-      jq -r '"\(.repo)#\(.pr) — \(.title)\n\(.findings | length) finding(s) · \(.files) files, +\(.additions) −\(.deletions)\n\n\(.summary)\n"' "$dir/preview/review.json"
+      jq -r '"\(.slug)#\(.pr) — \(.title)\n\(.findings | length) finding(s) · \(.files) files, +\(.additions) −\(.deletions)\n\n\(.summary)\n"' "$dir/preview/review.json"
       jq -r '.findings[] | "  [\(.severity)] \(.path // "repo"):\(.line // "-")  \(.title)"' "$dir/preview/review.json"
       echo
       echo "nothing has been posted. read it, then:  goblin post $id"
