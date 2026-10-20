@@ -916,6 +916,25 @@ test_agent_install_points_at_this_engine() {
   review_env_done
 }
 
+test_checkout_works_after_the_branch_is_deleted() {
+  # `gh pr checkout` goes by branch name, so a merged PR whose branch was deleted
+  # (the one people ask to have reviewed afterwards) reviewed "from the diff only".
+  # The pull ref outlives the branch.
+  setup
+  . "$ROOT/lib/diff.sh" 2>/dev/null; . "$ROOT/lib/engine.sh" 2>/dev/null
+  local origin="$GOBLIN_HOME/origin.git" work="$GOBLIN_HOME/w" clone="$GOBLIN_HOME/clone"
+  git init -q --bare "$origin"
+  git init -q "$work" && ( cd "$work" && git config user.email t@t && git config user.name t \
+    && echo base > f && git add f && git commit -qm base && git branch -M main \
+    && git push -q "$origin" main \
+    && echo change > f && git commit -qam change \
+    && git push -q "$origin" HEAD:refs/pull/7/head )          # no branch, only the pull ref
+  git clone -q "$origin" "$clone"
+  engine_checkout "acme/widgets" 7 "$clone" || { echo "checkout failed"; return 1; }
+  eq "change" "$(cat "$clone/f")" || return 1
+  teardown
+}
+
 # ---------------------------------------------------------------- update ---
 test_update_version_compare() {
   setup
@@ -1420,6 +1439,7 @@ t "review: model override is not persisted" test_review_provider_override_is_not
 t "provider: list --json matches the app"   test_provider_list_json_is_the_shape_the_app_decodes
 t "provider: models are real choices"      test_provider_models_are_a_list_of_real_choices
 t "agent: install points at this engine"   test_agent_install_points_at_this_engine
+t "engine: checkout survives a deleted branch" test_checkout_works_after_the_branch_is_deleted
 
 printf '\n  %s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -gt 0 ] && { printf '  failed:%b\n\n' "$FAILED"; exit 1; }

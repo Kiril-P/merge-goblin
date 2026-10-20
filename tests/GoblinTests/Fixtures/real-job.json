@@ -1,0 +1,24 @@
+{
+  "id": "j1792509161-39526",
+  "repo": "Kiril-P/merge-goblin",
+  "number": 4,
+  "title": "fix: the installer left the machine with no scheduler",
+  "url": "https://github.com/Kiril-P/merge-goblin/pull/4",
+  "phase": "ready",
+  "mode": "preview",
+  "provider": "claude",
+  "model": "haiku",
+  "focus": "full",
+  "force": true,
+  "createdAt": 1792509161,
+  "updatedAt": 1792509189,
+  "pid": 88284,
+  "providerUsed": "claude",
+  "head": "fa1f1c84b44c2559886f4fe554692e7218c96da0",
+  "author": "Kiril-P",
+  "result": {
+    "counts": "🟡 3 risk",
+    "findings": 3,
+    "costUsd": 0.0048075
+  }
+}

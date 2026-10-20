@@ -595,6 +595,14 @@ engine_checkout() {
   git -C "$dir" fetch --quiet origin >/dev/null 2>&1 || return 1
   git -C "$dir" reset --hard --quiet >/dev/null 2>&1
   git -C "$dir" clean -ffd >/dev/null 2>&1
+  # GitHub keeps refs/pull/N/head for every PR, open, merged or from a fork. `gh pr
+  # checkout` goes by branch name instead, which fails once the branch is deleted —
+  # exactly the PR someone asks to have reviewed after the fact — so it is only the
+  # fallback.
+  if git -C "$dir" fetch --quiet origin "pull/$pr/head" >/dev/null 2>&1 \
+     && git -C "$dir" checkout --quiet --detach FETCH_HEAD >/dev/null 2>&1; then
+    return 0
+  fi
   ( cd "$dir" && gh pr checkout "$pr" --repo "$slug" --detach >/dev/null 2>&1 ) || return 1
   return 0
 }

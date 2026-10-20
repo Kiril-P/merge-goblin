@@ -1,0 +1,62 @@
+{
+  "slug": "Kiril-P/merge-goblin",
+  "pr": 4,
+  "head": "fa1f1c84b44c2559886f4fe554692e7218c96da0",
+  "base": "main",
+  "title": "fix: the installer left the machine with no scheduler",
+  "url": "https://github.com/Kiril-P/merge-goblin/pull/4",
+  "provider": "claude",
+  "model": "haiku",
+  "costUsd": 0.0048075,
+  "summary": "The PR fixes a race where `launchctl bootout` returns before the job is gone, so the following `bootstrap` fails and the installer reported success with no scheduler loaded. `agent_start` now retries, treats an already-loaded job as success, and returns non-zero when nothing loads. `install.sh` reports a failed load as an error, `agent_reload` drops its `sleep 1`, and a fixture-backed test covers the retry. The direction is right, but the \"already loaded\" check can return success while a job is still tearing down, which reopens the same silent-failure path. I'd comment and confirm that before merging.",
+  "intent": {
+    "issue": "",
+    "verdict": "no_ticket",
+    "body": ""
+  },
+  "suggestedVerdict": "comment",
+  "files": 4,
+  "additions": 83,
+  "deletions": 5,
+  "findings": [
+    {
+      "path": "install.sh",
+      "line": 150,
+      "start_line": null,
+      "side": "RIGHT",
+      "start_side": null,
+      "severity": "risk",
+      "title": "agent_on can now return non-zero; confirm install.sh does not run under set -e",
+      "body": "`agent_on` now returns the status of `agent_start`, which is non-zero on failure. If `install.sh` enables `set -e` (not visible in this diff), the script exits on line 150 before reaching the `if agent_running` branch, so the new `err` message and the `try:` hint never print. Either guard the call (`agent_on || true`, with the state check below doing the reporting), or confirm `set -e` is not active in this script. The same applies to any other `agent_on`/`agent_start` caller that relied on the old always-zero behaviour.",
+      "suggestion": null,
+      "id": "f9ee34c0e45d",
+      "anchored": true
+    },
+    {
+      "path": "lib/agent.sh",
+      "line": 39,
+      "start_line": 38,
+      "side": "RIGHT",
+      "start_side": "RIGHT",
+      "severity": "risk",
+      "title": "bootstrap stderr is discarded, so the final failure reason is lost",
+      "body": "Line 39 sends bootstrap's stderr to `/dev/null` on every attempt. When all 25 attempts fail, the caller gets only `return 1` and no launchd error text, so a real misconfiguration (bad plist, wrong domain) is indistinguishable from the transient race in the logs. Capture the last attempt's stderr, for example `err_msg=$(launchctl bootstrap ... 2>&1)`, and print it when giving up, or at least keep it for `doctor`. This matters because the PR's own motivation is that failures were invisible.",
+      "suggestion": null,
+      "id": "c6ba4c451e2a",
+      "anchored": true
+    },
+    {
+      "path": "lib/agent.sh",
+      "line": 42,
+      "start_line": 40,
+      "side": "RIGHT",
+      "start_side": "RIGHT",
+      "severity": "risk",
+      "title": "agent_running can report a job that is mid-teardown as already started",
+      "body": "`launchctl bootout` is asynchronous, as the comment above this function says. During that window the job is still listed, so `agent_running` (not shown in the diff, but it is the same check `agent_reload`/`install.sh` rely on) is likely true. In that case line 42 `agent_running && return 0` returns success even though the job is about to disappear and nothing will be loaded. That is the silent failure this PR is meant to remove.\n\nThe retry should first wait until the old job is actually gone, and only treat \"already loaded\" as success once the job is confirmed present after that wait. For example, before the bootstrap loop, poll `agent_running` until it is false (bounded, like the 25-iteration loop), then bootstrap. Also add a test where `agent_running` stays true during teardown and then goes false, since the current test only models a fixed loaded state with `LC_FAKE_RUNNING`.",
+      "suggestion": null,
+      "id": "0b27357af2b8",
+      "anchored": true
+    }
+  ]
+}
