@@ -96,6 +96,13 @@ struct JobRow: View {
                         if !job.counts.isEmpty { Text(job.counts).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1) }
                         Spacer()
                         Button("Discard") { store.cancel(job) }.buttonStyle(.goblinQuiet)
+                        // Straight from the card: no need to open the review first. It posts
+                        // exactly what the preview holds (no edits), under your name.
+                        Button(store.postingJobs.contains(job.id) ? "Posting…" : "Post") {
+                            Task { await store.post(job) }
+                        }
+                        .buttonStyle(.goblinSmall).disabled(store.postingJobs.contains(job.id))
+                        .help("Post this review to GitHub as it is")
                         Button("Read review") { open(job) }.buttonStyle(.goblinPrimarySmall)
                     }
                 }
