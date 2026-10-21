@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.1
 
 - **Pick the repo before you type.** The review field starts with the repo a number
   means ("mobile-app #"); click it to switch between watched and recent repos. Your

@@ -11,7 +11,7 @@ GOBLIN_SLUG="goblin"               # cli name, state dir, ref namespace, label
 # The ONLY place the version is written. build.sh stamps it into Info.plist and the
 # DMG name, the release workflow refuses a tag that disagrees with it, and the app
 # reads it back from the engine. Bump it here and nowhere else.
-GOBLIN_VERSION="0.5.0"
+GOBLIN_VERSION="0.5.1"
 GOBLIN_TAGLINE="guards the merge button"
 GOBLIN_EMOJI="👺"
 GOBLIN_REPO_URL="https://github.com/Kiril-P/merge-goblin"
