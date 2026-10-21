@@ -644,6 +644,33 @@ final class AppStore {
         }
     }
 
+    // MARK: open at login
+
+    /// On by default: a Goblin that is not running after a restart reviews nothing.
+    /// Remembered once a person has chosen, so it is never switched back on behind them.
+    private static let loginItemDecidedKey = "loginItemDecided"
+
+    func setLoginItem(_ on: Bool) async {
+        UserDefaults.standard.set(true, forKey: Self.loginItemDecidedKey)
+        await perform(.loginItem(on: on))
+        loginItemOn = LoginItem.isInstalled
+    }
+
+    /// First launch after setup (or after updating to a version that has this): turn it
+    /// on once, and say so. Only for a real installed app, never a demo or a dev build.
+    func adoptLoginItemDefault() async {
+        guard Bundle.main.bundlePath.hasSuffix(".app"),
+              ProcessInfo.processInfo.environment["GOBLIN_HOME"] == nil,
+              snapshot.setupComplete,
+              !UserDefaults.standard.bool(forKey: Self.loginItemDecidedKey) else { return }
+        UserDefaults.standard.set(true, forKey: Self.loginItemDecidedKey)
+        guard !LoginItem.isInstalled else { return }
+        if await perform(.loginItem(on: true)) {
+            loginItemOn = LoginItem.isInstalled
+            say("Merge Goblin now opens when you log in. Turn it off in Settings › General.", .success)
+        }
+    }
+
     // MARK: updating the app
 
     /// Offered only when the engine runs from inside this app's bundle: that bundle is

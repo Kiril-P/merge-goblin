@@ -100,6 +100,10 @@ _panel_set() {
         always|safe|never) cfg_set --arg m "$v" '.autoPost = $m' ;;
         *) echo "auto post must be always, safe or never" >&2; return 2 ;;
       esac ;;
+    last-repo)
+      # The repo a bare PR number means (the switcher in front of the review field).
+      out="$(_panel_slug "$v")" || { echo "repo must be owner/name" >&2; return 2; }
+      cfg_set --arg r "$out" '.lastRepo = $r' ;;
     review-mine)
       case "$v" in
         off|hold|post) cfg_set --arg m "$v" '.reviewMine = $m' ;;

@@ -23,13 +23,37 @@ final class ReviewInput {
 
     var ref: PRRef? { PRRef.parse(text) }
 
-    /// Everything that could be the repo for a bare number.
+    /// Everything that could be the repo for a bare number: the current one, the
+    /// watched ones, then any reviewed recently.
     var repoCandidates: [String] {
         var seen: [String] = []
-        for s in [store.snapshot.settings.lastRepo] + store.snapshot.repos.map(\.slug) + extraCandidates {
-            if !s.isEmpty, !seen.contains(s) { seen.append(s) }
+        let recent = store.history.map(\.repo) + store.jobs.map(\.repo)
+        for s in [store.snapshot.settings.lastRepo] + store.snapshot.repos.map(\.slug) + extraCandidates + recent {
+            if !s.isEmpty, Pattern.repoSlug.accepts(s), !seen.contains(s) { seen.append(s) }
         }
         return seen
+    }
+
+    /// The repo a bare number means, before anything is typed. Same rule as the engine
+    /// (lib/review.sh ref_repo_resolve): the last one used, else the only watched one.
+    var defaultRepo: String? {
+        let last = store.snapshot.settings.lastRepo
+        if !last.isEmpty { return last }
+        let enabled = store.snapshot.repos.filter(\.enabled).map(\.slug)
+        return enabled.count == 1 ? enabled[0] : nil
+    }
+
+    /// What the switcher in front of the field shows: the link's repo when the text
+    /// names one, else the chosen repo.
+    var currentRepo: String? { ref?.slug ?? repoChoice ?? defaultRepo }
+
+    /// Switch repos up front. Remembered (lastRepo), so the next number means it too.
+    func chooseRepo(_ slug: String) {
+        guard Pattern.repoSlug.accepts(slug) else { return }
+        repoChoice = slug
+        if slug != store.snapshot.settings.lastRepo {
+            Task { await store.perform(.setLastRepo(slug)) }
+        }
     }
     private var extraCandidates: [String] = []
 
@@ -47,7 +71,7 @@ final class ReviewInput {
         task = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 350_000_000)
             guard !Task.isCancelled, let self else { return }
-            let repo = self.repoChoice
+            let repo = self.repoChoice ?? self.defaultRepo
             let r = await self.store.resolve(ref, repo: ref.slug == nil ? repo : nil)
             guard !Task.isCancelled else { return }
             self.resolving = false
@@ -75,7 +99,6 @@ final class ReviewInput {
         let job = await store.startReview(ref, options: o)
         if job != nil {
             text = ""
-            repoChoice = nil
             options.force = false
         }
         return job
@@ -93,10 +116,9 @@ struct ReviewField: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Image(systemName: "number")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(input.ref == nil ? Color.secondary : Theme.accent)
-                TextField("Review a PR — 2456 or a link", text: $input.text)
+                RepoSwitch(input: input, store: store)
+                TextField(input.currentRepo == nil ? "owner/repo#2456 or a PR link" : "PR number or link",
+                          text: $input.text)
                     .textFieldStyle(.plain)
                     .font(.system(size: 14))
                     .focused($focused)
@@ -171,16 +193,10 @@ struct ReviewField: View {
         VStack(alignment: .leading, spacing: 5) {
             Text(pr.title).font(.system(size: 13, weight: .semibold)).lineLimit(2)
             HStack(spacing: 6) {
-                if input.ref?.slug == nil {
-                    Menu {
-                        ForEach(input.repoCandidates, id: \.self) { c in
-                            Button(c) { input.repoChoice = c }
-                        }
-                    } label: { Chip(text: pr.ref, symbol: "arrow.triangle.branch", tint: Theme.accent) }
-                    .menuStyle(.button).buttonStyle(.plain).fixedSize()
-                } else {
-                    Chip(text: pr.ref, symbol: "arrow.triangle.branch", tint: Theme.accent)
+                Button { store.openURL(pr.url) } label: {
+                    Chip(text: pr.ref, symbol: "arrow.triangle.branch", tint: Theme.accent).modifier(LiftOnHover())
                 }
+                .buttonStyle(.plain).help("Open the pull request on GitHub")
                 if !pr.author.isEmpty { Chip(text: "@\(pr.author)") }
                 if pr.draft { Chip(text: "draft", tint: Color(nsColor: .systemOrange)) }
                 if !pr.isOpen { Chip(text: pr.merged ? "merged" : "closed", symbol: "exclamationmark.circle", tint: Color(nsColor: .systemRed)) }
@@ -197,7 +213,7 @@ struct ReviewField: View {
             Text(verbatim: "Which repo is #\(input.ref?.number ?? 0) in?").font(.system(size: 12.5, weight: .semibold))
             HStack(spacing: 6) {
                 ForEach(candidates.isEmpty ? input.repoCandidates : candidates, id: \.self) { c in
-                    Button(c) { input.repoChoice = c }.buttonStyle(.goblinSmall)
+                    Button(c) { input.chooseRepo(c) }.buttonStyle(.goblinSmall)
                 }
             }
             if candidates.isEmpty && input.repoCandidates.isEmpty {
@@ -268,6 +284,78 @@ struct ReviewField: View {
                     .toggleStyle(.checkbox).font(.system(size: 12))
             }
             .font(.system(size: 12))
+        }
+    }
+}
+
+// MARK: - The repo a number belongs to
+
+/// Sits in front of the field: "mobile-app #". Pick the repo first, then type a number,
+/// instead of discovering the repo only after a lookup. A pasted link names its own
+/// repo, so then it just shows that one.
+struct RepoSwitch: View {
+    @Bindable var input: ReviewInput
+    let store: AppStore
+    var windows: WindowManager = .shared
+    @State private var hovering = false
+
+    private var fromLink: Bool { input.ref?.slug != nil }
+
+    var body: some View {
+        Menu {
+            let current = input.currentRepo
+            let all = input.repoCandidates
+            let watched = Set(store.snapshot.repos.map(\.slug))
+            if all.isEmpty {
+                Text("No repositories yet")
+            }
+            if !all.filter(watched.contains).isEmpty {
+                Section("Watched") {
+                    ForEach(all.filter(watched.contains), id: \.self) { item($0, current) }
+                }
+            }
+            if !all.filter({ !watched.contains($0) }).isEmpty {
+                Section("Recent") {
+                    ForEach(all.filter { !watched.contains($0) }, id: \.self) { item($0, current) }
+                }
+            }
+            Divider()
+            Button("Add a repository…") { windows.showSettings(.repos) }
+            Text("Any other repo: paste a link, or type owner/repo#123")
+        } label: {
+            HStack(spacing: 3) {
+                Text(verbatim: label).lineLimit(1).truncationMode(.middle)
+                    .font(.system(size: 12, weight: .semibold))
+                if !fromLink {
+                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 7.5, weight: .bold))
+                        .foregroundStyle(.secondary)
+                }
+                Text("#").font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(input.ref == nil ? Color.secondary : Theme.accent)
+                    .padding(.leading, 3)
+            }
+            .padding(.leading, 7).padding(.trailing, 4).padding(.vertical, 3)
+            .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(Theme.accent.opacity(hovering && !fromLink ? 0.16 : 0.09)))
+            .foregroundStyle(input.currentRepo == nil ? Color.secondary : Theme.accent)
+            .frame(maxWidth: 170, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+        .disabled(fromLink)
+        .onHover { h in withAnimation(Motion.quick) { hovering = h } }
+        .help(fromLink ? "The link names this repo" : (input.currentRepo.map { "Reviewing PRs in \($0) — click to switch" } ?? "Choose a repo"))
+        .accessibilityLabel(input.currentRepo.map { "Repository \($0)" } ?? "Choose a repository")
+    }
+
+    private var label: String {
+        guard let r = input.currentRepo else { return "Pick a repo" }
+        return String(r.split(separator: "/").last ?? Substring(r))
+    }
+
+    @ViewBuilder private func item(_ slug: String, _ current: String?) -> some View {
+        Button { input.chooseRepo(slug) } label: {
+            if slug == current { Label(slug, systemImage: "checkmark") } else { Text(verbatim: slug) }
         }
     }
 }

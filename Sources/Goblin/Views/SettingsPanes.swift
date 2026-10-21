@@ -71,9 +71,13 @@ struct GeneralPane: View {
                 Toggle("", isOn: Binding(get: { s.enabled }, set: { store.setPower($0) }))
                     .toggleStyle(.switch).labelsHidden().tint(Theme.accent)
             }
-            FlagRow(store: store, title: "Open at login",
-                    hint: "Starts the menu bar app when you log in.",
-                    value: store.loginItemOn, command: { .loginItem(on: $0) })
+            SettingRow(title: "Open at login",
+                       hint: store.loginItemOn ? "Starts the menu bar app when you log in."
+                                               : "Off: after a restart nothing is reviewed until you open the app.") {
+                Toggle("", isOn: Binding(get: { store.loginItemOn },
+                                         set: { new in Task { await store.setLoginItem(new) } }))
+                    .toggleStyle(.switch).labelsHidden().tint(Theme.accent)
+            }
             SettingRow(title: "Check for new requests every",
                        hint: s.agentInstalled ? (s.agentRunning ? "The scheduler is running." : "The scheduler is installed but not running.")
                                               : "No scheduler is installed. Run the installer to add one.",
