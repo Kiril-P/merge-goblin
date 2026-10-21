@@ -224,6 +224,8 @@ prompt_build() {
       printf '## Findings already posted on this PR\n\n'
       printf 'These were reported on an earlier commit. **Do not report them again.** Only\n'
       printf 'raise something if it is genuinely new or the code changed and it still applies.\n'
+      printf 'For each one, check whether the current code fixes it, and put the [id] of every\n'
+      printf 'one that is fixed in `fixed_prior`. Still present or unsure: leave it out.\n'
       printf 'A line marked DECLINED was declined by the author, do not raise it again: they\n'
       printf 'replied that it is intentional or will not be fixed, or resolved the thread.\n'
       printf 'Do not report it again in any wording, at any severity, on any line.\n\n'
@@ -277,7 +279,8 @@ prompt_build() {
 prompt_prior_lines() {
   jq -r 'def one: tostring | gsub("[\\n\\r`]+";" ") | .[0:200];
     (map(select(.declined == true)) + map(select(.declined != true)))[]
-    | "- \(.severity // "?" | one): \(.path // "?" | one):\(.line // "?" | one)"
+    | "- " + (if (.id // "" | tostring | test("^[0-9a-f]{6,64}$")) then "[\(.id)] " else "" end)
+      + "\(.severity // "?" | one): \(.path // "?" | one):\(.line // "?" | one)"
       + (if (.title // "") != "" then " — \(.title | one)" else "" end)
       + (if .declined == true
          then " — DECLINED by the author (\(if (.declinedBy // "") != "" then "@" + (.declinedBy | one) + " " else "" end)\(.declinedHow // "declined" | one)), do not raise again"

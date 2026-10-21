@@ -754,8 +754,11 @@ engine_publish() {
 
   # tell prior threads that their finding is gone
   if [ -s "$prior_json" ] && [ "$(jq 'length' "$prior_json")" != "0" ]; then
-    jq -c '[.findings[].id]' "$work/norm.json" > "$work/curids.json"
-    post_fixed_replies "$slug" "$pr" "$prior_json" "$work/curids.json" "$head"
+    # NOT "every prior id missing from this review": the prompt tells the model not to
+    # repeat a finding that still stands, so absence means nothing. Only the ids the
+    # model positively says are fixed.
+    jq -c '[.fixed_prior[]?]' "$work/norm.json" > "$work/fixedids.json" 2>/dev/null || echo '[]' > "$work/fixedids.json"
+    post_fixed_replies "$slug" "$pr" "$prior_json" "$work/fixedids.json" "$head"
   fi
 
   local counts inline_n

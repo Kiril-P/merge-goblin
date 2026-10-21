@@ -39,6 +39,8 @@ def canon_suggested:
            blast_radius: ((.assessment.blast_radius // "") | .[0:300]) }
     else null end
   ),
+  # Positive evidence only: "no longer flagged" is replied ONLY for an id listed here.
+  fixed_prior: ([ .fixed_prior[]? | strings | select(test("^[0-9a-f]{6,64}$")) ] | unique | .[0:50]),
   intent_note: (
     if (.intent_note | type) == "object" then
       { issue:   (.intent_note.issue // ""),

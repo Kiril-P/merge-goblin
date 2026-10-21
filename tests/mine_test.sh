@@ -107,3 +107,20 @@ test_commit_status_has_no_emoji() {
   LC_ALL=C grep -q $'\xf0' "$GH_LOG" && { echo "a 4-byte character reached GitHub"; return 1; }
   teardown
 }
+
+test_fixed_prior_is_kept_and_prompted() {
+  setup
+  . "$ROOT/lib/prompt.sh" 2>/dev/null
+  # normalize keeps well-formed ids only
+  local out; out="$(echo '{"summary":"s","findings":[],"fixed_prior":["a23f9e0f2eda","bad id; rm",7,"a23f9e0f2eda"]}' \
+    | jq -c --argjson max 25 -f "$ROOT/share/jq/normalize.jq")"
+  eq '["a23f9e0f2eda"]' "$(printf '%s' "$out" | jq -c .fixed_prior)" || return 1
+  eq '[]' "$(echo '{"summary":"s","findings":[]}' | jq -c --argjson max 25 -f "$ROOT/share/jq/normalize.jq" | jq -c .fixed_prior)" || return 1
+  # the model is shown the id it has to quote back
+  echo '[{"id":"a23f9e0f2eda","severity":"blocker","path":"x.js","line":3,"title":"T"}]' > "$GOBLIN_HOME/p.json"
+  prompt_prior_lines "$GOBLIN_HOME/p.json" | grep -q '^- \[a23f9e0f2eda\] blocker: x.js:3 — T$' \
+    || { echo "got: $(prompt_prior_lines "$GOBLIN_HOME/p.json")"; return 1; }
+  # the strict schema (codex) requires it, or codex would never send it
+  jq -e '.required | index("fixed_prior")' "$ROOT/share/schema/findings.strict.schema.json" >/dev/null || return 1
+  teardown
+}

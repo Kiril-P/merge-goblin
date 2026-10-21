@@ -24,6 +24,7 @@ fence around it.
     "risk": "low" | "medium" | "high",
     "blast_radius": "one sentence: what breaks, and for whom, if this change is wrong"
   },
+  "fixed_prior": ["a23f9e0f2eda"],
   "intent_note": {
     "issue": "TICKET-123",
     "verdict": "fulfils" | "partial" | "diverges" | "unknown" | "no_ticket",
@@ -63,6 +64,11 @@ unsure about. A missing test is at most a `convention` (if the repo requires one
 `low` for a contained change with an easy rollback, `high` for anything touching money, auth,
 data, migrations or a shared interface many callers depend on. It is about the change, not
 about how many findings you made. Set it to `null` if you cannot tell.
+
+**`fixed_prior`** lists the ids of findings from "Findings already posted" that the
+current code has fixed. Check the code for each one before you list it: the author is
+told it is fixed. Leave out anything still present, anything you could not check, and
+anything declined. An empty list when there was nothing posted before.
 
 **`suggestion`** must be the exact replacement text for the commented line range —
 omit it unless it applies cleanly on its own.

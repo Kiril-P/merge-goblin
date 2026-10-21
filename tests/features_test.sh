@@ -242,10 +242,12 @@ test_declined_threads_get_no_fixed_reply() {
   setup
   . "$ROOT/lib/render.sh"; . "$ROOT/lib/post.sh"
   mk_fake_gh; GH_LOG="$GOBLIN_HOME/gh.log"; export GH_LOG
-  echo '[{"id":"a","commentId":11,"declined":true},{"id":"b","commentId":12,"declined":false}]' > "$GOBLIN_HOME/prior.json"
-  echo '[]' > "$GOBLIN_HOME/cur.json"
+  echo '[{"id":"a","commentId":11,"declined":true},{"id":"b","commentId":12,"declined":false},{"id":"c","commentId":13}]' > "$GOBLIN_HOME/prior.json"
+  # the model said a and b are fixed; c is simply not repeated, which proves nothing
+  echo '["a","b"]' > "$GOBLIN_HOME/cur.json"
   post_fixed_replies a/b 1 "$GOBLIN_HOME/prior.json" "$GOBLIN_HOME/cur.json" deadbeef
   grep -q "comments/11/replies" "$GH_LOG" && { echo "replied 'no longer flagged' on a declined thread"; return 1; }
+  grep -q "comments/13/replies" "$GH_LOG" && { echo "replied 'no longer flagged' on a finding nobody said was fixed"; return 1; }
   grep -q "comments/12/replies" "$GH_LOG" || { echo "the real fixed reply is gone"; return 1; }
   # and it carries a marker, so nothing reads it as a person replying
   grep "comments/12/replies" "$GH_LOG" | grep -q "<!-- $GOBLIN_MARKER_NS:fixed " || { echo "fixed reply has no marker"; return 1; }
