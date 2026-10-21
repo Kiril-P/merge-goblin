@@ -115,17 +115,25 @@ run_with_timeout() {
 # Single-instance lock. Stale after 3h (a review can legitimately take minutes).
 lock_acquire() {
   if [ -d "$LOCKDIR" ]; then
-    if [ -n "$(find "$LOCKDIR" -maxdepth 0 -mmin +180 2>/dev/null)" ]; then
+    # A run killed outright (launchctl bootout on reinstall, a crash, SIGKILL) never
+    # releases its lock, and going by age alone that silenced the scheduler for three
+    # hours. The owner's pid says at once whether anyone still holds it.
+    local owner; owner="$(cat "$LOCKDIR/pid" 2>/dev/null)"
+    if [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null; then
+      log "removing the lock of a run that died (pid $owner)"
+      rm -rf "$LOCKDIR"
+    elif [ -n "$(find "$LOCKDIR" -maxdepth 0 -mmin +180 2>/dev/null)" ]; then
       log "removing stale lock"
-      rmdir "$LOCKDIR" 2>/dev/null || rm -rf "$LOCKDIR"
+      rm -rf "$LOCKDIR"
     else
       return 1
     fi
   fi
   mkdir "$LOCKDIR" 2>/dev/null || return 1
+  echo "$$" > "$LOCKDIR/pid" 2>/dev/null || true
   return 0
 }
-lock_release() { rmdir "$LOCKDIR" 2>/dev/null || true; }
+lock_release() { rm -rf "$LOCKDIR" 2>/dev/null || true; }
 
 # Stable short hash of a string (used for finding ids and fleet assignment).
 goblin_hash() { printf '%s' "$1" | shasum -a 256 2>/dev/null | cut -c1-12; }

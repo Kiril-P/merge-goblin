@@ -2147,6 +2147,7 @@ t "mine: own-PR verdict is a comment"      test_own_pr_verdict_is_always_a_comme
 t "mine: newer held review replaces older" test_a_newer_held_review_replaces_the_older
 t "status: no emoji in the description"    test_commit_status_has_no_emoji
 t "fixed: only what the model says is fixed" test_fixed_prior_is_kept_and_prompted
+t "lock: a dead run's lock clears at once"  test_a_dead_runs_lock_is_cleared_at_once
 
 printf '\n  %s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -gt 0 ] && { printf '  failed:%b\n\n' "$FAILED"; exit 1; }

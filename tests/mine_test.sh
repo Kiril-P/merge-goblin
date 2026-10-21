@@ -124,3 +124,18 @@ test_fixed_prior_is_kept_and_prompted() {
   jq -e '.required | index("fixed_prior")' "$ROOT/share/schema/findings.strict.schema.json" >/dev/null || return 1
   teardown
 }
+
+test_a_dead_runs_lock_is_cleared_at_once() {
+  setup
+  # held by a live process: refused
+  lock_acquire || { echo "could not take a free lock"; return 1; }
+  lock_acquire && { echo "took a lock a live run holds"; return 1; }
+  # its owner was killed: the next run takes it straight away, not in three hours
+  ( sleep 0 ) & local dead=$!; wait "$dead"
+  echo "$dead" > "$LOCKDIR/pid"
+  lock_acquire || { echo "a dead run's lock still blocks the scheduler"; return 1; }
+  eq "$$" "$(cat "$LOCKDIR/pid")" || return 1
+  lock_release
+  [ ! -d "$LOCKDIR" ] || { echo "release left the lock"; return 1; }
+  teardown
+}

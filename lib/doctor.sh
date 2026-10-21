@@ -189,7 +189,8 @@ doctor_agent() {
     else _doc warn "scheduler" "not loaded" "$GOBLIN_SLUG agent start"; fi
   fi
   if [ -d "$LOCKDIR" ]; then
-    if [ -n "$(find "$LOCKDIR" -maxdepth 0 -mmin +180 2>/dev/null)" ]; then
+    if { [ -s "$LOCKDIR/pid" ] && ! kill -0 "$(cat "$LOCKDIR/pid")" 2>/dev/null; } \
+       || [ -n "$(find "$LOCKDIR" -maxdepth 0 -mmin +180 2>/dev/null)" ]; then
       if [ "$DOC_FIX" = true ]; then rm -rf "$LOCKDIR"; _doc ok "lock" "stale lock removed"
       else _doc warn "lock" "stale lock held" "$GOBLIN_SLUG doctor --fix"; fi
     else
