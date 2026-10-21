@@ -1,5 +1,5 @@
 # Homebrew cask for the Merge Goblin. The release workflow fills in version and sha256;
-# copy the result into the tap (Kiril-P/homebrew-tap, Casks/merge-goblin.rb).
+# scripts/update-tap.sh copies the result into the tap (Kiril-P/homebrew-tap).
 cask "merge-goblin" do
   version "@VERSION@"
   sha256 "@SHA256@"
@@ -9,11 +9,16 @@ cask "merge-goblin" do
   desc "Menu bar app that reviews GitHub pull requests with your AI subscription"
   homepage "https://github.com/Kiril-P/merge-goblin"
 
-  depends_on macos: ">= :sonoma"
+  depends_on macos: :sonoma
 
   app "Merge Goblin.app"
   # the engine ships inside the app; this puts its `goblin` command on the PATH
   binary "#{appdir}/Merge Goblin.app/Contents/Resources/engine/bin/goblin"
+
+  zap trash: [
+    "~/.goblin",
+    "~/Library/LaunchAgents/com.*.goblin.bar.plist",
+  ]
 
   # Internal builds are not notarised yet. Remove this once releases are signed.
   caveats <<~EOS
@@ -21,9 +26,4 @@ cask "merge-goblin" do
     open System Settings > Privacy & Security and click "Open Anyway" next to
     Merge Goblin. You only need to do this once per version.
   EOS
-
-  zap trash: [
-    "~/.goblin",
-    "~/Library/LaunchAgents/com.*.goblin.bar.plist",
-  ]
 end
