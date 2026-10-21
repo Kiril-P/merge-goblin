@@ -229,6 +229,13 @@ gh_status() {
   # a private review of your own PR leaves nothing on GitHub, not even a check
   [ "${ENGINE_MINE:-}" = hold ] && return 0
   local slug="$1" sha="$2" state="$3" desc="$4" url="${5:-}"
+  # GitHub refuses any 4-byte character in a status description (422), and the
+  # counts start with 🔴/🟡: every "posted" status was rejected, leaving the check
+  # pending forever. Drop the emoji (and the BMP symbol/variation-selector ones that
+  # would now look orphaned), keep the words.
+  desc="$(printf '%s' "$desc" | jq -Rr 'explode
+      | map(select(. < 65536 and (. < 9728 or . > 10175) and . != 65039))
+      | implode | gsub(" {2,}"; " ") | ltrimstr(" ")' 2>/dev/null || printf '%s' "$desc")"
   set -- -f state="$state" -f context="$GOBLIN_SLUG/review" -f description="$(trunc "$desc" 138)"
   [ -n "$url" ] && set -- "$@" -f target_url="$url"
   gh api -X POST "repos/$slug/statuses/$sha" "$@" --silent >/dev/null 2>&1 || true

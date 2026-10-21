@@ -94,3 +94,16 @@ test_a_newer_held_review_replaces_the_older() {
   eq "1" "$(jq -s '[.[] | select(.phase == "ready")] | length' "$JOBS_DIR"/*/job.json)" || return 1
   teardown
 }
+
+test_commit_status_has_no_emoji() {
+  setup
+  . "$ROOT/lib/github.sh" 2>/dev/null
+  mk_fake_gh
+  GH_LOG="$GOBLIN_HOME/gh.log"; export GH_LOG; : > "$GH_LOG"
+  gh_status a/b abc success "🔴 2 blocker · 🟡 1 risk · ⚪️ 3 nit · composer-2.5" "https://x"
+  grep -q 'description=2 blocker · 1 risk · 3 nit · composer-2.5' "$GH_LOG" \
+    || { echo "got: $(cat "$GH_LOG")"; return 1; }
+  # GitHub's rule: nothing above U+FFFF
+  LC_ALL=C grep -q $'\xf0' "$GH_LOG" && { echo "a 4-byte character reached GitHub"; return 1; }
+  teardown
+}

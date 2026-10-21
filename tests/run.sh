@@ -2145,6 +2145,7 @@ t "mine: drafts only when asked"           test_own_drafts_only_when_asked
 t "mine: private review leaves GitHub"     test_a_private_review_leaves_github_alone
 t "mine: own-PR verdict is a comment"      test_own_pr_verdict_is_always_a_comment
 t "mine: newer held review replaces older" test_a_newer_held_review_replaces_the_older
+t "status: no emoji in the description"    test_commit_status_has_no_emoji
 
 printf '\n  %s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -gt 0 ] && { printf '  failed:%b\n\n' "$FAILED"; exit 1; }
