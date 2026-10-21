@@ -45,7 +45,8 @@ prompt_rules_view() {
     case "$path" in
       ".$GOBLIN_SLUG/config.json"|.github/PULL_REQUEST_REVIEW.md|.github/CODE_REVIEW.md|CONTRIBUTING.md) want=1 ;;
       AGENTS.md|CONVENTIONS.md|CLAUDE.md|.cursorrules) want=1 ;;
-      .agents/skills/*/SKILL.md|.agents/skills/*/*/SKILL.md) want=1 ;;
+      # `*` in a case pattern also matches "/", so this covers nested skill dirs too
+      .agents/skills/*/SKILL.md) want=1 ;;
     esac
     [ -n "$extra" ] && [ "$path" = "$extra" ] && want=1
     [ -n "$ours" ] && [ "$path" = "$ours" ] && want=1

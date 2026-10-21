@@ -1419,6 +1419,7 @@ upd_release() { # <tag> <prerelease:true|false> — publish whatever is in $UPD/
 upd_env() { # [release-version] [bundle-id-in-the-image]
   setup
   local f v="${1:-0.5.0}"
+  # shellcheck source=/dev/null
   for f in jobs update update_install; do . "$ROOT/lib/$f.sh"; done
   UPD="$GOBLIN_HOME/upd"; export UPD
   GOBLIN_VERSION="0.4.1"

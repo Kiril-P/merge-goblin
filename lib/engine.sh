@@ -766,6 +766,7 @@ engine_publish() {
   inline_n="$(jq '.inline | length' "$work/split.json")"
   gh_status "$slug" "$head" success "$counts · $model" "$review_url"
   GOBLIN_LAST_REVIEW_URL="$review_url"
+  # shellcheck disable=SC1010  # "done" is the phase name, not the loop keyword
   job_phase done "$(jq -nc --arg c "$counts" --arg u "$review_url" --argjson n "${inline_n:-0}" \
     --argjson cost "${cost:-0}" '{result:{counts:$c, reviewUrl:$u, inline:$n, costUsd:$cost}}')"
 
