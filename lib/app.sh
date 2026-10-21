@@ -14,7 +14,15 @@
 # Written for bash 3.2, which is what /bin/bash on macOS actually is.
 
 APP_EXEC_NAME="GoblinBar"
-APP_BUNDLE="${GOBLIN_APP_BUNDLE:-$HOME/Applications/$GOBLIN_SHORT.app}"
+# The running app passes its own path (a cask or a dragged DMG lives in /Applications;
+# install.sh puts it in ~/Applications). From a terminal, take whichever exists.
+if [ -n "${GOBLIN_APP_BUNDLE:-}" ]; then
+  APP_BUNDLE="$GOBLIN_APP_BUNDLE"
+elif [ ! -d "$HOME/Applications/$GOBLIN_SHORT.app" ] && [ -d "/Applications/$GOBLIN_SHORT.app" ]; then
+  APP_BUNDLE="/Applications/$GOBLIN_SHORT.app"
+else
+  APP_BUNDLE="$HOME/Applications/$GOBLIN_SHORT.app"
+fi
 
 # LaunchServices caches an app's Info.plist by path, so a bundle replaced in place
 # has to be re-registered or macOS keeps answering from the stale copy.

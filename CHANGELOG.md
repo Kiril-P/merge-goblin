@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **Pick the repo before you type.** The review field starts with the repo a number
+  means ("mobile-app #"); click it to switch between watched and recent repos. Your
+  choice sticks for the next number. Before, the repo only showed up after a lookup,
+  and switching meant looking up a PR first.
+- **Open at login is on by default.** The last setup step shows the switch (on), an
+  existing install turns it on once with a notice, and Health flags it when it is off.
+  Fixed: from a cask or a dragged DMG (in /Applications) the switch failed, because
+  the login item looked for the app in ~/Applications.
+
 ## 0.5.0
 
 The Goblin is now a native Mac app, and you can hand it any PR yourself.

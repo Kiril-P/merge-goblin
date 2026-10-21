@@ -498,6 +498,21 @@ private struct DoneStep: View {
                     bullet("hand.raised", "Post nothing to GitHub until you say so.")
                 }
             }
+            Card {
+                HStack(spacing: 12) {
+                    Image(systemName: "power").font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.accent)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Open Merge Goblin when you log in").font(.system(size: 13, weight: .semibold))
+                        Text("Recommended. Otherwise nothing is reviewed after a restart until you open it.")
+                            .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    Toggle("", isOn: Binding(get: { store.loginItemOn },
+                                             set: { new in Task { await store.setLoginItem(new) } }))
+                        .toggleStyle(.switch).labelsHidden().tint(Theme.accent)
+                }
+            }
             VStack(alignment: .leading, spacing: 8) {
                 SectionLabel(text: "Three ways to ask")
                 HStack(alignment: .top, spacing: 10) {

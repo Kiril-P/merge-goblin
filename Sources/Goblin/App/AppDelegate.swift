@@ -40,6 +40,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         if !store.cliConfigured { log.error("no engine found: the app has nothing to drive") }
         launchOptions(store)
+        Task { @MainActor in
+            // after the first snapshot, so setupComplete is known
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            await store.adoptLoginItemDefault()
+        }
     }
 
     /// Developer and demo switches, ignored in a normal launch:

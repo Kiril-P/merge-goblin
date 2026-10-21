@@ -284,6 +284,10 @@ final class WelcomeModel {
         if completed, !store.snapshot.agentInstalled {
             await store.perform(.agent(.install))
         }
+        // On by default; the last step shows the switch, so it is a choice, not a surprise.
+        if completed, Bundle.main.bundlePath.hasSuffix(".app"), !LoginItem.isInstalled {
+            await store.setLoginItem(true)
+        }
     }
 
     // MARK: GitHub sign-in

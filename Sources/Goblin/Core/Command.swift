@@ -184,6 +184,7 @@ enum Command: Equatable {
     case setMaxConcurrentJobs(Int)     // 1...8
     case setManualReviewMode(ReviewMode)
     case setAutoPost(AutoPost)
+    case setLastRepo(String)          // the repo a bare PR number means
     case setReviewMine(ReviewMine)
 
     // review behaviour
@@ -316,6 +317,8 @@ enum Command: Equatable {
             return Command.panelSet("auto-post", p.rawValue)
         case .setReviewMine(let m):
             return Command.panelSet("review-mine", m.rawValue)
+        case .setLastRepo(let slug):
+            return Command.panelSet("last-repo", slug)
 
         case .setVerdictMode(let mode):
             return Command.panelSet("verdict-mode", mode.rawValue)
@@ -425,7 +428,7 @@ enum Command: Equatable {
             if let repo, !Pattern.repoSlug.accepts(repo) { throw CommandRefusal("repo is not in the accepted format") }
         case .postReview(let job), .cancelJob(let job):
             if !Pattern.jobId.accepts(job) { throw CommandRefusal("not a job id") }
-        case .repoAdd(let slug), .repoRemove(let slug), .repoEnable(let slug, _):
+        case .repoAdd(let slug), .repoRemove(let slug), .repoEnable(let slug, _), .setLastRepo(let slug):
             if !Pattern.repoSlug.accepts(slug) { throw CommandRefusal("repo is not in the accepted format") }
         case .setRepoProvider(let slug, _, let model):
             if !Pattern.repoSlug.accepts(slug) { throw CommandRefusal("repo is not in the accepted format") }

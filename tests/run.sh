@@ -1912,6 +1912,7 @@ test_panel_contract_matches_the_app() {
       manual-mode)     cmd_panel set "$k" preview   >/dev/null 2>&1 || bad="$bad $k" ;;
       auto-post)       cmd_panel set "$k" safe      >/dev/null 2>&1 || bad="$bad $k" ;;
       review-mine)     cmd_panel set "$k" hold      >/dev/null 2>&1 || bad="$bad $k" ;;
+      last-repo)       cmd_panel set "$k" acme/widgets >/dev/null 2>&1 || bad="$bad $k" ;;
       verdict-mode)    cmd_panel set "$k" comment   >/dev/null 2>&1 || bad="$bad $k" ;;
       provider-model)  cmd_panel set "$k" claude sonnet >/dev/null 2>&1 || bad="$bad $k" ;;
       allow-approve)   cmd_panel set "$k" false     >/dev/null 2>&1 || bad="$bad $k" ;;
@@ -2149,6 +2150,7 @@ t "mine: newer held review replaces older" test_a_newer_held_review_replaces_the
 t "status: no emoji in the description"    test_commit_status_has_no_emoji
 t "fixed: only what the model says is fixed" test_fixed_prior_is_kept_and_prompted
 t "lock: a dead run's lock clears at once"  test_a_dead_runs_lock_is_cleared_at_once
+t "login: open at login checked and fixed"  test_open_at_login_is_checked_and_fixed
 
 printf '\n  %s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -gt 0 ] && { printf '  failed:%b\n\n' "$FAILED"; exit 1; }

@@ -145,6 +145,10 @@ final class CLI {
         ]
         // Passed through only when the launching context actually had them: a
         // fabricated TMPDIR would be worse than no TMPDIR.
+        // Where THIS app lives, so the login item launches it and not some other copy:
+        // a cask or a dragged DMG is in /Applications, install.sh uses ~/Applications.
+        let bundle = Bundle.main.bundlePath
+        if bundle.hasSuffix(".app") { env["GOBLIN_APP_BUNDLE"] = bundle }
         if let t = inherited["TMPDIR"] { env["TMPDIR"] = t }
         if let s = inherited["SHELL"] { env["SHELL"] = s }
         return env

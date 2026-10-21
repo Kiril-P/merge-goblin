@@ -139,3 +139,25 @@ test_a_dead_runs_lock_is_cleared_at_once() {
   [ ! -d "$LOCKDIR" ] || { echo "release left the lock"; return 1; }
   teardown
 }
+
+test_open_at_login_is_checked_and_fixed() {
+  setup
+  # a sandboxed HOME: this writes a LaunchAgent plist, never into the real one
+  local realhome="$HOME"; HOME="$GOBLIN_HOME/h"; mkdir -p "$HOME"
+  local b="$GOBLIN_HOME/Some Place/Merge Goblin.app"
+  mkdir -p "$b/Contents/MacOS"; printf '#!/bin/sh\n' > "$b/Contents/MacOS/GoblinBar"; chmod +x "$b/Contents/MacOS/GoblinBar"
+  GOBLIN_APP_BUNDLE="$b"; export GOBLIN_APP_BUNDLE
+  . "$ROOT/lib/doctor.sh"
+  DOC_JSON='[]'; DOC_AS_JSON=true; DOC_FIX=false
+  doctor_menu
+  eq "warn" "$(printf '%s' "$DOC_JSON" | jq -r '.[] | select(.check == "open at login") | .status')" \
+    || { HOME="$realhome"; echo "got: $DOC_JSON"; return 1; }
+  DOC_JSON='[]'; DOC_FIX=true
+  doctor_menu
+  local plist; plist="$(ls "$HOME"/Library/LaunchAgents/*.plist 2>/dev/null | head -1)"
+  [ -n "$plist" ] || { HOME="$realhome"; echo "fix did not turn it on"; return 1; }
+  # it launches the app that asked, wherever it lives (a cask puts it in /Applications)
+  grep -q "Some Place/Merge Goblin.app/Contents/MacOS/GoblinBar" "$plist" || { HOME="$realhome"; echo "login item points elsewhere"; return 1; }
+  HOME="$realhome"; unset GOBLIN_APP_BUNDLE
+  teardown
+}

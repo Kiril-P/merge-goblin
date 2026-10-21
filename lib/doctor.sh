@@ -203,6 +203,15 @@ doctor_menu() {
   . "$LIB_DIR/app.sh"
   if [ -x "$(app_exec_path)" ]; then
     _doc ok "menu bar app" "installed — run: $GOBLIN_SLUG ui"
+    # Without it the Goblin is gone after every restart until someone remembers it.
+    if [ "$(app_login_item_status)" = on ]; then
+      _doc ok "open at login" "on"
+    elif [ "$DOC_FIX" = true ] && app_login_item_on >/dev/null 2>&1; then
+      _doc ok "open at login" "was off — turned on"
+    else
+      _doc warn "open at login" "off: after a restart nothing reviews until you open the app" \
+        "$GOBLIN_SLUG app login-item on"
+    fi
   else
     _doc warn "menu bar app" "not installed" "$GOBLIN_SLUG app rebuild   (from a git checkout)"
   fi
