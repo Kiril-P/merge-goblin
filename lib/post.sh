@@ -137,7 +137,8 @@ post_fixed_replies() {
   # `.id as $i` is load-bearing: `$fx[0] | index(.id)` evaluates `.id` against the ids
   # ARRAY, which is a jq error, and selects nothing, silently.
   gone="$(jq -c --slurpfile fx "$fixedids" \
-    '[ .[] | select(.id != null and .declined != true) | select(.id as $i | ($fx[0] | index($i)) != null) ] | .[0:10]' \
+    '[ .[] | select(.id != null and .declined != true and .fixedReplied != true)
+       | select(.id as $i | ($fx[0] | index($i)) != null) ] | .[0:10]' \
     "$prior" 2>/dev/null)"
   n="$(printf '%s' "$gone" | jq 'length' 2>/dev/null || echo 0)"
   i=0

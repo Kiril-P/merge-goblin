@@ -8,7 +8,8 @@
 #   resolved  REST ids of the first comment of every RESOLVED review thread
 #
 # Output: [{…marker fields (id, severity, …), commentId, path, line, title,
-#           declined, declinedBy, declinedHow}]
+#           declined, declinedBy, declinedHow, fixedReplied}]
+# fixedReplied: we already told this thread "no longer flagged"; never say it twice.
 #
 # DECLINED — a heuristic, on purpose kept small and readable:
 #   * the thread is resolved, or
@@ -46,7 +47,11 @@
           | select(((.body // "") | ours) | not)
           | select(((.body // "") | test("no longer flagged as of")) | not)
           | select((.body // "") | declines) ] | first ) as $d
+    | ( any($replies[]; .in_reply_to_id == $c.id
+            and ((.body // "") | test("<!-- (" + $ns + "|" + $legacy + "):fixed |no longer flagged as of"))
+            and ((.user.login // "") as $u | $who | index($u))) ) as $fx
     | $pf
+      + { fixedReplied: $fx }
       + { commentId: $c.id, path: $c.path, line: ($c.line // $c.original_line),
           title: ((($c.body | capture("\\*\\*(?<t>[^*\\n]{1,200})\\*\\*")) | .t) // "") }
       + ( if $d != null then

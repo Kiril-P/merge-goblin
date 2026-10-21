@@ -67,6 +67,16 @@ The Goblin is now a native Mac app, and you can hand it any PR yourself.
   likely addressed, discussed or ignored, so you can see whether reviews help. Also
   shown in the popover and Settings > About.
 
+### Found by a real end-to-end run
+
+- "✅ no longer flagged" is replied only on a finding the model checked and says is
+  fixed (`fixed_prior`), and only once per thread. Before, every earlier finding the
+  new review did not repeat got the reply, including ones still unfixed.
+- The commit status no longer carries emoji, which GitHub refuses: a posted review
+  now turns the `goblin/review` check green instead of leaving it pending.
+- A run that is killed (a reinstall, a crash) no longer blocks the scheduler for
+  three hours: the lock records its owner and is cleared as soon as that owner is gone.
+
 ### Fixes from an audit
 
 - Engine: the repo lock is keyed by repo, not PR number; transient claim failures
