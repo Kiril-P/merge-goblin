@@ -1910,6 +1910,7 @@ test_panel_contract_matches_the_app() {
       identity)        cmd_panel set "$k" someuser  >/dev/null 2>&1 || bad="$bad $k" ;;
       manual-mode)     cmd_panel set "$k" preview   >/dev/null 2>&1 || bad="$bad $k" ;;
       auto-post)       cmd_panel set "$k" safe      >/dev/null 2>&1 || bad="$bad $k" ;;
+      review-mine)     cmd_panel set "$k" hold      >/dev/null 2>&1 || bad="$bad $k" ;;
       verdict-mode)    cmd_panel set "$k" comment   >/dev/null 2>&1 || bad="$bad $k" ;;
       provider-model)  cmd_panel set "$k" claude sonnet >/dev/null 2>&1 || bad="$bad $k" ;;
       allow-approve)   cmd_panel set "$k" false     >/dev/null 2>&1 || bad="$bad $k" ;;
@@ -2136,6 +2137,14 @@ t "repo provider: falls back when unusable" test_repo_provider_falls_back_when_u
 t "codex: reads confined to the checkout"  test_codex_reads_are_confined_to_the_checkout
 t "codex: profile quotes paths"            test_codex_profile_quotes_paths
 t "codex: real sandbox confines (if installed)" test_codex_real_sandbox_confines_when_installed
+
+. "$ROOT/tests/mine_test.sh"
+t "mine: own PRs left alone by default"    test_own_prs_are_left_alone_unless_asked
+t "mine: own PRs reviewed when on"         test_own_prs_are_reviewed_when_on
+t "mine: drafts only when asked"           test_own_drafts_only_when_asked
+t "mine: private review leaves GitHub"     test_a_private_review_leaves_github_alone
+t "mine: own-PR verdict is a comment"      test_own_pr_verdict_is_always_a_comment
+t "mine: newer held review replaces older" test_a_newer_held_review_replaces_the_older
 
 printf '\n  %s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -gt 0 ] && { printf '  failed:%b\n\n' "$FAILED"; exit 1; }

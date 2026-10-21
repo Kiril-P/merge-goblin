@@ -226,6 +226,8 @@ gh_ticket_context() {
 # gh_status <slug> <sha> <state> <desc> [url] — SHA-scoped visible marker.
 gh_status() {
   [ "$(cfg_get '.postCommitStatus' true)" = "true" ] || return 0
+  # a private review of your own PR leaves nothing on GitHub, not even a check
+  [ "${ENGINE_MINE:-}" = hold ] && return 0
   local slug="$1" sha="$2" state="$3" desc="$4" url="${5:-}"
   set -- -f state="$state" -f context="$GOBLIN_SLUG/review" -f description="$(trunc "$desc" 138)"
   [ -n "$url" ] && set -- "$@" -f target_url="$url"

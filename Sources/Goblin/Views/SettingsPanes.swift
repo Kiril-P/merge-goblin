@@ -612,6 +612,23 @@ struct BehaviourPane: View {
                     .pickerStyle(.segmented).labelsHidden().fixedSize()
                 }
             }
+            SettingsGroup(title: "Your own pull requests") {
+                let mine = ReviewMine(rawValue: s.reviewMine) ?? .off
+                SettingRow(title: "Review the PRs you open", hint: mine.hint, last: mine == .off) {
+                    Picker("", selection: Binding(
+                        get: { mine },
+                        set: { new in Task { await store.perform(.setReviewMine(new)) } })) {
+                        ForEach(ReviewMine.allCases) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.segmented).labelsHidden().fixedSize()
+                }
+                if mine != .off {
+                    FlagRow(store: store, title: "Drafts too",
+                            hint: "Review your draft PRs on every push as well. Off: he waits until you mark it ready.",
+                            value: s.reviewMineDrafts, last: true,
+                            command: { .setFlag(key: .reviewMineDrafts, on: $0) })
+                }
+            }
             SettingsGroup(title: "Approving") {
                 FlagRow(store: store, title: "Allow approving a clean PR",
                         hint: verdict == .full

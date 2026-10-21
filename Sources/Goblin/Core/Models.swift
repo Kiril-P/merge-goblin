@@ -469,6 +469,8 @@ struct Snapshot: Equatable {
         var refutePass = true
         var manualReviewMode = "preview"
         var autoPost = "always"
+        var reviewMine = "off"
+        var reviewMineDrafts = false
         var maxConcurrentJobs = 2
         var lastRepo = ""
         var notifyStarted = true
@@ -561,6 +563,8 @@ struct Snapshot: Equatable {
         st.refutePass = s["refutePass"].bool(true)
         st.manualReviewMode = s["manualReviewMode"].string("preview")
         st.autoPost = s["autoPost"].string("always")
+        st.reviewMine = s["reviewMine"].string("off")
+        st.reviewMineDrafts = s["reviewMineDrafts"].bool(false)
         st.maxConcurrentJobs = s["maxConcurrentJobs"].int(2)
         st.lastRepo = s["lastRepo"].string("")
         st.notifyStarted = s["notify"]["started"].bool(true)
@@ -584,6 +588,26 @@ struct DoctorCheck: Identifiable, Equatable {
     let check: String
     let detail: String
     let fix: String
+}
+
+/// Whether the scheduler reviews pull requests you opened yourself, and where it puts them.
+enum ReviewMine: String, CaseIterable, Identifiable {
+    case off, hold, post
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .off: return "Off"
+        case .hold: return "Keep private"
+        case .post: return "Post them"
+        }
+    }
+    var hint: String {
+        switch self {
+        case .off: return "He only reviews PRs someone asked you to review."
+        case .hold: return "Every push to a PR you opened gets a review that waits in Ready to read. Nothing appears on GitHub unless you post it."
+        case .post: return "Every push to a PR you opened gets a review posted as a comment, like a review bot. Follows “When one is ready” above."
+        }
+    }
 }
 
 /// What the scheduler does with a review nobody asked for by hand.

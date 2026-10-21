@@ -33,6 +33,8 @@ goblin_default_config() {
   "maxFindings": 25,
   "refutePass": true,
   "autoPost": "always",
+  "reviewMine": "off",
+  "reviewMineDrafts": false,
   "gitTimeoutSecs": 120,
   "maxDiffBytes": 400000,
   "postIntentComment": true,

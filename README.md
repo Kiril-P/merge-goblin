@@ -299,6 +299,8 @@ the review body and aren't counted.
 | `maxReviewsPerRun` | `5` | |
 | `maxFindings` | `25` | |
 | `autoPost` | `always` | what the scheduler does with a finished review: `always` posts, `safe` holds anything with a blocker or rated high-risk, `never` holds everything for you to post from Ready to read |
+| `reviewMine` | `off` | review every push to PRs **you** opened: `hold` keeps each review private in Ready to read (nothing on GitHub), `post` posts it as a comment review |
+| `reviewMineDrafts` | `false` | with `reviewMine` on, review your draft PRs too |
 | `refutePass` | `true` | second, skeptical pass before an unattended review posts |
 | `gitTimeoutSecs` | `120` | cap on every clone / fetch the engine runs |
 | `fleet` | `[]` | teammates also running the Goblin |

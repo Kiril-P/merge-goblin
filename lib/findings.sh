@@ -69,8 +69,13 @@ findings_counts() {
 # The engine decides the verdict; the model's suggestion is only a hint.
 # Default policy never approves and never blocks under a human's account.
 findings_verdict() {
-  local file="$1" mode blockers total
+  local file="$1" author="${2:-}" mode blockers total
   mode="$(cfg_get '.verdictMode' 'comment')"
+  # GitHub refuses APPROVE and REQUEST_CHANGES on your own pull request (422).
+  if [ -n "$author" ] && [ "$(printf '%s' "$author" | tr '[:upper:]' '[:lower:]')" \
+       = "$(printf '%s' "${GOBLIN_LOGIN:-}" | tr '[:upper:]' '[:lower:]')" ]; then
+    mode=comment
+  fi
   blockers="$(jq '[.findings[]? | select(.severity=="blocker")] | length' "$file" 2>/dev/null || echo 0)"
   total="$(jq '.findings | length' "$file" 2>/dev/null || echo 0)"
   case "$mode" in

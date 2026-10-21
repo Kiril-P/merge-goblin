@@ -25,6 +25,7 @@ ONLY_PR=""; ONLY_REPO=""; DRY_RUN=false; FORCE=false; SCHEDULED=false
 # PREVIEW: run the whole review but stop before posting — the result is saved for a
 # person to read first (see engine_save_preview). Only manual jobs set it.
 PREVIEW=false
+ENGINE_MINE=""
 GOBLIN_LAST_REVIEW_URL=""
 REVIEWS_THIS_RUN=0
 
@@ -275,6 +276,7 @@ engine_repo() {
     i=$((i + 1))
     engine_pr "$slug" "$entry" "$provider" || true
   done
+  ENGINE_MINE=""
   rm -f "$prs" "$prs.sorted" 2>/dev/null
 }
 
@@ -293,7 +295,23 @@ engine_pr() {
   base="$(printf '%s' "$entry"  | jq -r '.base')"
   draft="$(printf '%s' "$entry" | jq -r '.draft')"
 
-  [ "$draft" = "true" ] && { log "  #$pr: draft, skipping"; return 0; }
+  # Your own PRs (reviewMine): nobody can request your review on your own PR, so the
+  # fleet gate below would never let one through. hold = review every push and keep
+  # it in Ready to read, nothing on GitHub; post = post it like any other review.
+  ENGINE_MINE=""
+  local author_l me_l mine_mode
+  author_l="$(printf '%s' "$entry" | jq -r '.author // ""' | tr '[:upper:]' '[:lower:]')"
+  me_l="$(printf '%s' "${GOBLIN_LOGIN:-}" | tr '[:upper:]' '[:lower:]')"
+  if [ -n "$me_l" ] && [ "$author_l" = "$me_l" ] && [ -z "$ONLY_PR" ]; then
+    mine_mode="$(cfg_get '.reviewMine' off)"
+    case "$mine_mode" in hold|post) ENGINE_MINE="$mine_mode" ;; esac
+  fi
+
+  if [ "$draft" = "true" ]; then
+    if [ -z "$ENGINE_MINE" ] || [ "$(cfg_get '.reviewMineDrafts' false)" != "true" ]; then
+      log "  #$pr: draft, skipping"; return 0
+    fi
+  fi
 
   local key="${pr}:${head}"
   if [ "$FORCE" != true ] && [ -z "$ONLY_PR" ] && ledger_has "$key"; then return 0; fi
@@ -304,7 +322,7 @@ engine_pr() {
   fi
 
   # --- gate: is this PR mine to review? (free) ---
-  if [ -z "$ONLY_PR" ] && [ "$(cfg_get '.fleetAssignment' true)" = "true" ]; then
+  if [ -z "$ONLY_PR" ] && [ -z "$ENGINE_MINE" ] && [ "$(cfg_get '.fleetAssignment' true)" = "true" ]; then
     local eligible assignee
     eligible="$(claim_eligible "$entry")"
     if [ -z "$eligible" ]; then
@@ -344,8 +362,9 @@ engine_pr() {
   # owner. Its own reviews are excluded by marker inside gh_human_reviewers — they
   # are posted under a human token and are otherwise indistinguishable, and without
   # that exclusion the Goblin sees itself and never reviews the repo again.
+  # Not for your own PR: a teammate's review there is exactly when you want a second look.
   if [ "$(cfg_get '.skipIfHumanReviewed' true)" = "true" ] && [ "$FORCE" != true ] \
-     && [ -z "$ONLY_PR" ]; then
+     && [ -z "$ONLY_PR" ] && [ -z "$ENGINE_MINE" ]; then
     local rj humans; rj="$RUNTMP/reviews-$pr-$$.json"
     if gh_reviews_fetch "$slug" "$pr" "$rj"; then
       humans="$(gh_human_reviewers "$rj" | paste -sd, - 2>/dev/null)"
@@ -391,7 +410,9 @@ engine_pr() {
   fi
 
   # --- gate: atomic claim (authoritative) ---
-  if [ "$DRY_RUN" != true ] && [ -z "$ONLY_PR" ]; then
+  # Your own PR takes no claim: the claim is per commit, and holding it would stop the
+  # teammate's Goblin that was actually asked to review this PR.
+  if [ "$DRY_RUN" != true ] && [ -z "$ONLY_PR" ] && [ -z "$ENGINE_MINE" ]; then
     if [ "$(cfg_get '.refsForbidden' false)" = "true" ]; then
       claim_try_comment "$slug" "$pr" "$head" || { log "  #$pr: another bot claimed it"; return 0; }
     else
@@ -610,6 +631,9 @@ engine_save_preview() {
 ENGINE_HOLD_WHY=""
 engine_should_hold() {
   local norm="$1" policy
+  if [ "${ENGINE_MINE:-}" = hold ]; then
+    ENGINE_HOLD_WHY="it's your own pull request, so it stays private until you post it"; return 0
+  fi
   policy="$(cfg_get '.autoPost' always)"
   case "$policy" in
     never) ENGINE_HOLD_WHY="every review waits for you (Settings › Behaviour)"; return 0 ;;
@@ -645,6 +669,9 @@ engine_hold() {
       origin:"scheduled", heldBecause:$why, provider:$prov, providerUsed:$prov, model:$model,
       focus:"full", force:false, head:$head, author:$author, createdAt:$at}')" || return 1
 
+  # A newer commit's review replaces one still waiting for an older commit.
+  engine_supersede_held "$slug" "$pr" "$id"
+
   GOBLIN_JOB_ID="$id"; GOBLIN_JOB_DIR="$dir"
   engine_save_preview "$work" "$slug" "$pr" "$head" "$base" "$title" "$url" "$provider" "$prior_json"; rc=$?
   # The scheduler goes on to other PRs in this same process: nothing after this may
@@ -661,12 +688,29 @@ engine_hold() {
   return 0
 }
 
+# engine_supersede_held <slug> <pr> <keep-id> — discard reviews of this PR that the
+# scheduler is holding for an older commit. Only scheduled ones: a review someone asked
+# for by hand is theirs to discard.
+engine_supersede_held() {
+  local slug="$1" pr="$2" keep="$3" f id
+  for f in "$JOBS_DIR"/*/job.json; do
+    [ -f "$f" ] || continue
+    id="$(jq -r --arg r "$slug" --argjson n "$pr" --arg k "$keep" '
+      select(.repo == $r and .number == $n and .phase == "ready"
+             and .origin == "scheduled" and .id != $k) | .id' "$f" 2>/dev/null)"
+    [ -n "$id" ] && job_id_ok "$id" || continue
+    ( GOBLIN_JOB_ID="$id"; GOBLIN_JOB_DIR="$(job_dir_of "$id")"
+      job_phase discarded '{"reason":"superseded"}' )
+    log "  #$pr: replaced the review held for an older commit"
+  done
+}
+
 engine_publish() {
   local work="$1" slug="$2" pr="$3" head="$4" base="$5" title="$6" url="$7" provider="$8" prior_json="$9"
   local model="${GOBLIN_P_MODEL:-$provider}" cost="${GOBLIN_P_COST_USD:-0}"
 
   diff_split_findings "$work/norm.json" "$work/addr.json" "$work/split.json"
-  local event; event="$(findings_verdict "$work/norm.json")"
+  local event; event="$(findings_verdict "$work/norm.json" "$(jq -r '.author // ""' "$work/pr.json" 2>/dev/null)")"
   render_review_body "$work/norm.json" "$work/split.json" "$pr" "$head" "$base" \
                      "$provider" "$model" "$GOBLIN_LOGIN" "$work/files.json" "$event" > "$work/body.md"
   if ! post_build_review "$work/split.json" "$work/body.md" "$head" "$event" \

@@ -100,6 +100,11 @@ _panel_set() {
         always|safe|never) cfg_set --arg m "$v" '.autoPost = $m' ;;
         *) echo "auto post must be always, safe or never" >&2; return 2 ;;
       esac ;;
+    review-mine)
+      case "$v" in
+        off|hold|post) cfg_set --arg m "$v" '.reviewMine = $m' ;;
+        *) echo "your own PRs must be off, hold or post" >&2; return 2 ;;
+      esac ;;
     manual-mode)
       case "$v" in
         preview|post) cfg_set --arg m "$v" '.manualReviewMode = $m' ;;
@@ -138,6 +143,7 @@ _panel_set() {
         fleet-assignment|fleetAssignment)         cfg_set ".fleetAssignment = $fval" ;;
         skip-if-human-reviewed|skipIfHumanReviewed) cfg_set ".skipIfHumanReviewed = $fval" ;;
         refute-pass|refutePass)                   cfg_set ".refutePass = $fval" ;;
+        review-mine-drafts|reviewMineDrafts)      cfg_set ".reviewMineDrafts = $fval" ;;
         # The global skip rules. Per-repo overrides and the path globs are config-only.
         skip-bots|skipBots)                       cfg_set ".skip.bots = $fval" ;;
         skip-docs-only|skipDocsOnly)              cfg_set ".skip.docsOnly = $fval" ;;

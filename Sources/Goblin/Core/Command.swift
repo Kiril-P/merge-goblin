@@ -84,6 +84,7 @@ enum FlagKey: String, CaseIterable {
     case notifySound
     case skipIfHumanReviewed
     case refutePass
+    case reviewMineDrafts     // reviewMineDrafts: also review your own draft PRs
     case skipBots             // skip.bots: leave dependency-bot PRs alone
     case skipDocsOnly         // skip.docsOnly: leave docs-only PRs alone
 
@@ -100,6 +101,7 @@ enum FlagKey: String, CaseIterable {
         case .notifySound:       return "notify-sound"
         case .skipIfHumanReviewed: return "skip-if-human-reviewed"
         case .refutePass:        return "refute-pass"
+        case .reviewMineDrafts:  return "review-mine-drafts"
         case .skipBots:          return "skip-bots"
         case .skipDocsOnly:      return "skip-docs-only"
         }
@@ -182,6 +184,7 @@ enum Command: Equatable {
     case setMaxConcurrentJobs(Int)     // 1...8
     case setManualReviewMode(ReviewMode)
     case setAutoPost(AutoPost)
+    case setReviewMine(ReviewMine)
 
     // review behaviour
     case setVerdictMode(VerdictMode)
@@ -311,6 +314,8 @@ enum Command: Equatable {
             return Command.panelSet("manual-mode", mode.rawValue)
         case .setAutoPost(let p):
             return Command.panelSet("auto-post", p.rawValue)
+        case .setReviewMine(let m):
+            return Command.panelSet("review-mine", m.rawValue)
 
         case .setVerdictMode(let mode):
             return Command.panelSet("verdict-mode", mode.rawValue)

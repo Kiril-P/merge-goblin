@@ -15,6 +15,12 @@ The Goblin is now a native Mac app, and you can hand it any PR yourself.
 - **Auto-post policy** for reviews the Goblin does on its own (Settings > Behaviour,
   `autoPost`): post them all, post only when safe (no blocker, not high-risk), or hold
   every one in Ready to read for you to post.
+- **Your own pull requests** (Settings > Behaviour, `reviewMine`): the Goblin can review
+  every push to PRs you opened, like a review bot. *Keep private* holds each review in
+  Ready to read with nothing on GitHub (no comment, no commit status); *Post them* posts
+  a comment review. A newer push replaces a review still waiting for an older one. Drafts
+  only if you turn on `reviewMineDrafts`. A review of your own PR is always a comment,
+  since GitHub refuses approve or request-changes there.
 - A preview is refused at post time if a review of the same commit was posted after
   the preview was made, so two people (or two Goblins) do not post the same review.
   `--force` overrides; a deliberate re-review of a newer commit still posts.
