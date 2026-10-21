@@ -40,6 +40,8 @@ GOBLIN_APP="${GOBLIN_APP:-$(cd "$(dirname "$_self")/.." && pwd)}"
 . "$GOBLIN_APP/lib/attempts.sh"
 # shellcheck source=lib/inbox.sh
 . "$GOBLIN_APP/lib/inbox.sh"
+# shellcheck source=lib/jobs.sh
+. "$GOBLIN_APP/lib/jobs.sh"
 # state.sh last: ui_state_write reads the inbox counts and the stuck list, so both
 # of the above have to exist by the time it is defined.
 # shellcheck source=lib/state.sh
@@ -55,6 +57,10 @@ $GOBLIN_EMOJI $GOBLIN_NAME v$GOBLIN_VERSION — $GOBLIN_TAGLINE
   goblin ui                        open the control panel (everything is here)
   goblin status [--json]              current state, stats and spend
   goblin doctor [--fix] [--json]      diagnose everything; --fix repairs the safe ones
+  goblin review <ref> [--post]        review one PR (2456, owner/repo#2456 or a URL);
+          [--repo S] [--focus F]      waits in preview until you `goblin post` it
+  goblin post <job> | cancel <job>    publish a waiting review / stop or discard one
+  goblin jobs [--json]                what has been asked for, newest first
   goblin run [--pr N] [--repo SLUG]   review now
           [--plan] [--force]       --plan = dry run (posts nothing)
   goblin on | off                     master switch (off survives reboot)
@@ -62,13 +68,19 @@ $GOBLIN_EMOJI $GOBLIN_NAME v$GOBLIN_VERSION — $GOBLIN_TAGLINE
   goblin snooze 1h|tomorrow|<secs>|clear
   goblin budget [show|off|<usd>]      daily spend cap
   goblin repos [list|add SLUG|rm SLUG|enable SLUG|disable SLUG]
+  goblin repo provider SLUG <claude|codex|cursor|default> [MODEL]
+                                      who reviews this one repo
+  goblin stats [--json] [--days N] [--by severity|repo]
+                                      what became of posted findings
   goblin provider [list|use <id>|which]
   goblin fleet [list|add LOGIN|rm LOGIN]   teammates also running the $GOBLIN_SHORT
+  goblin fleet status [--json]        what each teammate's $GOBLIN_SHORT did lately
   goblin config [get <path>|set <path> <value>|edit|path]
   goblin log [-f] [-n N]              tail the log
   goblin agent [status|start|stop|reload|label]
   goblin migrate [--from DIR]         import state from the old prauto/conductor setup
   goblin update                       check for a newer $GOBLIN_SHORT (never installs)
+  goblin update install [--json]      replace this app with the latest verified release
   goblin version | help
 EOF
 }
@@ -79,6 +91,12 @@ case "$cmd" in
   status)   . "$LIB_DIR/cmd_status.sh";  cmd_status "$@" ;;
   doctor)   . "$LIB_DIR/doctor.sh";      cmd_doctor "$@" ;;
   run)      . "$LIB_DIR/engine.sh";      cmd_run "$@" ;;
+  review)   . "$LIB_DIR/engine.sh"; . "$LIB_DIR/review.sh"; cmd_review "$@" ;;
+  post)     . "$LIB_DIR/engine.sh"; . "$LIB_DIR/review.sh"; cmd_post "$@" ;;
+  cancel)   . "$LIB_DIR/engine.sh"; . "$LIB_DIR/review.sh"; cmd_cancel "$@" ;;
+  jobs)     . "$LIB_DIR/engine.sh"; . "$LIB_DIR/review.sh"; cmd_jobs "$@" ;;
+  job)      . "$LIB_DIR/engine.sh"; . "$LIB_DIR/review.sh"; cmd_job "$@" ;;
+  resolve)  . "$LIB_DIR/engine.sh"; . "$LIB_DIR/review.sh"; cmd_resolve "$@" ;;
   migrate)  . "$LIB_DIR/migrate.sh";     cmd_migrate "$@" ;;
   inbox)    cmd_inbox "$@" ;;
   # `panel` is the menu bar app's settings channel — every write it makes goes
@@ -86,14 +104,18 @@ case "$cmd" in
   # the `ui` aliases, which used to include `panel` and would swallow it.
   panel)    . "$LIB_DIR/cmd_panel.sh";   cmd_panel "$@" ;;
   app)      . "$LIB_DIR/app.sh";         cmd_app "$@" ;;
+  # The app's repo picker asks for `repo-search`; the implementation is `repos search`.
+  repo-search) . "$LIB_DIR/discover.sh"; cmd_repos_search "$@" ;;
+  github-login) . "$LIB_DIR/gh_login.sh"; cmd_github_login "$@" ;;
   accounts) . "$LIB_DIR/discover.sh";    cmd_accounts "$@" ;;
   wizard)   . "$LIB_DIR/discover.sh";    cmd_wizard_state "$@" ;;
-  ui|open)  . "$LIB_DIR/ui.sh";          cmd_ui "$@" ;;
+  ui|open)  . "$LIB_DIR/app.sh";         cmd_ui "$@" ;;
+  stats)    . "$LIB_DIR/stats.sh";       cmd_stats "$@" ;;
   update)   . "$LIB_DIR/update.sh";      cmd_update "$@" ;;
   version)  echo "$GOBLIN_NAME $GOBLIN_VERSION" ;;
   help|-h|--help) usage ;;
   # everything else is a small control verb
-  on|off|pause|resume|toggle|toggle-power|snooze|budget|repos|provider|fleet|config|log|agent|fix-account|\
+  on|off|pause|resume|toggle|toggle-power|snooze|budget|repos|repo|provider|fleet|config|log|agent|fix-account|\
   run-now|snooze1h|snoozetomorrow|clearsnooze|budgetoff|budget2|budget5|budget10|set-budget|disable-agent|enable-agent)
             . "$LIB_DIR/cmd_ctl.sh";     cmd_ctl "$cmd" "$@" ;;
   *)        echo "$GOBLIN_SLUG: unknown command '$cmd'" >&2; usage >&2; exit 2 ;;

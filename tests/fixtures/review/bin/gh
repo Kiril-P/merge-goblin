@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# Fake `gh` for the review-by-number tests: unlike the generic stub it serves a whole
+# pull request (metadata, files, reviews) so a review can run end to end offline.
+#   REVIEW_FAKE_LOG    one line per call
+#   REVIEW_FAKE_STATE  open|closed (default open)
+#   REVIEW_FAKE_HEAD   head sha (default aaaaaaa1111111)
+#   REVIEW_FAKE_PRIOR  if set, GET reviews returns a Goblin review at that sha
+#   REVIEW_FAKE_AUTHOR the PR author's login (default alice)
+#   REVIEW_FAKE_FILES  a file served as the PR's changed files (default: one src/a.js)
+#   REVIEW_FAKE_COMMENTS a file served as the PR's review comments (default [])
+[ -n "${REVIEW_FAKE_LOG:-}" ] && printf '%s\n' "$*" >> "$REVIEW_FAKE_LOG"
+
+head="${REVIEW_FAKE_HEAD:-aaaaaaa1111111}"
+state="${REVIEW_FAKE_STATE:-open}"
+
+case "${1:-}" in
+  auth) case "${2:-}" in token) echo gho_fake; exit 0 ;; *) exit 0 ;; esac ;;
+  pr) exit 0 ;;   # `gh pr checkout` — there is no real clone in these tests
+esac
+[ "${1:-}" = api ] || exit 0
+shift
+method=GET; path=""; jqf="."; input=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -X) method="$2"; shift 2 ;;
+    --jq|-q) jqf="$2"; shift 2 ;;
+    --input) input="$2"; shift 2 ;;
+    --paginate|--silent|--include) shift ;;
+    -f|-F|--field|--raw-field) shift 2 ;;
+    -*) shift ;;
+    *) [ -z "$path" ] && path="$1"; shift ;;
+  esac
+done
+path="${path%%\?*}"
+
+emit() { jq -r "$jqf"; }
+
+case "$method:$path" in
+  POST:*/pulls/*/reviews)
+    [ -n "$input" ] && cp "$input" "${REVIEW_FAKE_POSTED:-/dev/null}" 2>/dev/null
+    echo '{"html_url":"https://github.com/acme/widgets/pull/2456#pullrequestreview-1"}' | emit; exit 0 ;;
+  POST:*|PATCH:*|DELETE:*) exit 0 ;;
+esac
+
+case "$path" in
+  user) echo '{"login":"me"}' | emit ;;
+  # REVIEW_FAKE_THREADS: a file served as the reviewThreads response. Unset means GitHub
+  # could not be read, which is what the failure paths in `goblin stats` need.
+  graphql) [ -n "${REVIEW_FAKE_THREADS:-}" ] && [ -f "$REVIEW_FAKE_THREADS" ] && cat "$REVIEW_FAKE_THREADS" || exit 1 ;;
+  repos/*/pulls/*/files)
+    if [ -n "${REVIEW_FAKE_FILES:-}" ]; then emit < "$REVIEW_FAKE_FILES"; exit 0; fi
+    cat <<JSON | emit
+[{"filename":"src/a.js","status":"modified","additions":2,"deletions":1,
+  "patch":"@@ -1,3 +1,4 @@\n line one\n-old\n+new\n+added\n line three"}]
+JSON
+    ;;
+  repos/*/pulls/*/reviews)
+    if [ -n "${REVIEW_FAKE_PRIOR:-}" ]; then
+      jq -nc --arg s "$REVIEW_FAKE_PRIOR" '[{submitted_at:"2026-01-01T00:00:00Z", commit_id:$s, user:{login:"me",type:"User"},
+        state:"COMMENTED", body:("<!-- goblin:review {\"v\":1,\"headSha\":\"" + $s + "\"} -->")}]' | emit
+    else echo '[]' | emit; fi ;;
+  repos/*/pulls/*/comments)
+    if [ -n "${REVIEW_FAKE_COMMENTS:-}" ]; then emit < "$REVIEW_FAKE_COMMENTS"; else echo '[]' | emit; fi ;;
+  repos/*/issues/*/comments) echo '[]' | emit ;;
+  repos/*/pulls/*)
+    num="${path##*/}"
+    jq -nc --argjson n "$num" --arg h "$head" --arg st "$state" --arg a "${REVIEW_FAKE_AUTHOR:-alice}" \
+      '{number:$n, title:"Add the widget", body:"Adds a widget.",
+      state:$st, merged:false, draft:false, html_url:("https://github.com/acme/widgets/pull/" + ($n|tostring)),
+      user:{login:$a}, base:{ref:"main"}, head:{sha:$h}}' | emit ;;
+  *) exit 0 ;;
+esac

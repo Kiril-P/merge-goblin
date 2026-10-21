@@ -5,7 +5,7 @@
     <key>CFBundleName</key>
     <string>__SHORT__</string>
     <key>CFBundleDisplayName</key>
-    <string>__NAME__</string>
+    <string>__SHORT__</string>
     <key>CFBundleIdentifier</key>
     <string>__BUNDLE_ID__</string>
     <key>CFBundleExecutable</key>
@@ -21,41 +21,40 @@
     <key>CFBundleShortVersionString</key>
     <string>__VERSION__</string>
 
-    <!-- Menu bar only: no Dock icon, no app switcher entry, no window on launch.
-         The previous script bundle had no LSUIElement, which is why quitting it
-         from the Dock killed the control panel it was serving. -->
+    <!-- Menu bar only: no Dock icon, no app switcher entry. -->
     <key>LSUIElement</key>
     <true/>
 
     <key>LSMinimumSystemVersion</key>
-    <string>13.0</string>
+    <string>14.0</string>
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.developer-tools</string>
-
-    <!-- Required with no nib: NSApplicationMain is not used, but LaunchServices
-         still wants to know which class principal-loads the app. -->
-    <key>NSPrincipalClass</key>
-    <string>NSApplication</string>
-
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSHumanReadableCopyright</key>
+    <string>Merge Goblin</string>
 
-    <!-- Both false on purpose. Sudden termination lets the system SIGKILL us
-         without warning, and automatic termination lets it quit an app it thinks
-         is idle — this app is "idle" almost all of the time while holding the
-         animation timer and the ~/.goblin file watcher, and losing either of
-         those silently is exactly the bug that is impossible to diagnose. -->
+    <!-- goblin://review/2456 · goblin://review/owner/repo/2456 · goblin://job/<id> -->
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>Merge Goblin</string>
+            <key>CFBundleURLSchemes</key>
+            <array><string>goblin</string></array>
+        </dict>
+    </array>
+
+    <!-- Both false on purpose: the system must not kill or quit an app that is
+         "idle" almost all the time while it holds a file watcher and a hotkey. -->
     <key>NSSupportsSuddenTermination</key>
     <false/>
     <key>NSSupportsAutomaticTermination</key>
     <false/>
 
-    <!-- Custom keys read by app/CLI.swift.
-
-         GBLCLIPath is pinned at install time and never searched for at runtime: a
-         GUI-launched app inherits PATH=/usr/bin:/bin:/usr/sbin:/sbin, so `goblin`
-         is not on it, and guessing would mean running whatever happened to be
-         first on a path we do not control. -->
+    <!-- Only set by a source install (lib/app.sh), where the engine lives outside
+         the bundle. A built app carries its own engine in Resources/engine and
+         ignores this. -->
     <key>GBLCLIPath</key>
     <string>__CLI__</string>
     <key>GBLHome</key>

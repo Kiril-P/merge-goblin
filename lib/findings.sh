@@ -69,8 +69,13 @@ findings_counts() {
 # The engine decides the verdict; the model's suggestion is only a hint.
 # Default policy never approves and never blocks under a human's account.
 findings_verdict() {
-  local file="$1" mode blockers total
+  local file="$1" author="${2:-}" mode blockers total
   mode="$(cfg_get '.verdictMode' 'comment')"
+  # GitHub refuses APPROVE and REQUEST_CHANGES on your own pull request (422).
+  if [ -n "$author" ] && [ "$(printf '%s' "$author" | tr '[:upper:]' '[:lower:]')" \
+       = "$(printf '%s' "${GOBLIN_LOGIN:-}" | tr '[:upper:]' '[:lower:]')" ]; then
+    mode=comment
+  fi
   blockers="$(jq '[.findings[]? | select(.severity=="blocker")] | length' "$file" 2>/dev/null || echo 0)"
   total="$(jq '.findings | length' "$file" 2>/dev/null || echo 0)"
   case "$mode" in
@@ -155,7 +160,10 @@ findings_run() {
     printf 'Return ONLY the JSON object described above. No prose, no markdown fence.\n'
   } > "$pf2"
 
+  # the rejected first call was paid for too
+  local first_cost="${GOBLIN_P_COST_USD:-0}"
   findings_invoke "$prov" "$pf2" "$dir" "$tmp" "$raw"; rc=$?
+  GOBLIN_P_COST_USD="$(awk -v a="$first_cost" -v b="${GOBLIN_P_COST_USD:-0}" 'BEGIN{printf "%.6f", a+b}')"
   if [ "$rc" -eq 0 ] && findings_validate "$tmp" "$errf"; then
     findings_normalize "$tmp" "$out"; return $?
   fi

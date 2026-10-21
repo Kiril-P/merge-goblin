@@ -1,0 +1,92 @@
+name: release
+
+# Push a tag like v0.5.0 and this builds the disk image, signs and notarises it when
+# the Apple secrets are present, and publishes it with SHA256SUMS (which the in-app
+# updater requires) and the cask text for the tap.
+#
+# Secrets (all optional; without them the release is an unsigned build):
+#   MACOS_CERT_P12, MACOS_CERT_PASSWORD   a "Developer ID Application" certificate, base64 .p12
+#   APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD   for notarytool
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: tag matches the version
+        run: |
+          . lib/brand.sh
+          test "v$GOBLIN_VERSION" = "$GITHUB_REF_NAME" \
+            || { echo "tag $GITHUB_REF_NAME but lib/brand.sh says $GOBLIN_VERSION"; exit 1; }
+
+      - name: tools
+        run: brew install jq gh || true
+
+      - name: tests
+        run: |
+          chmod +x tests/fixtures/bin/* tests/fixtures/review/bin/*
+          ./tests/run.sh
+          swift test
+
+      - name: signing identity
+        id: sign
+        env:
+          CERT: ${{ secrets.MACOS_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          if [ -z "$CERT" ]; then echo "identity=" >> "$GITHUB_OUTPUT"; echo "no certificate: unsigned build"; exit 0; fi
+          KC="$RUNNER_TEMP/build.keychain-db"
+          echo "$CERT" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p ci "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p ci "$KC"
+          security import "$RUNNER_TEMP/cert.p12" -P "$CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KC"
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci "$KC" >/dev/null
+          security list-keychains -d user -s "$KC" login.keychain-db
+          ID="$(security find-identity -v -p codesigning "$KC" | sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' | head -1)"
+          echo "identity=$ID" >> "$GITHUB_OUTPUT"
+
+      - name: build
+        env:
+          IDENTITY: ${{ steps.sign.outputs.identity }}
+        run: |
+          if [ -n "$IDENTITY" ]; then ./build.sh --universal --dmg --sign "$IDENTITY"
+          else ./build.sh --universal --dmg; fi
+
+      - name: notarise
+        if: steps.sign.outputs.identity != ''
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: ./scripts/notarize.sh build/MergeGoblin-*.dmg
+
+      - name: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          . lib/brand.sh
+          DMG="build/MergeGoblin-$GOBLIN_VERSION.dmg"
+          # After notarisation: stapling rewrites the DMG, so a sum taken earlier is wrong.
+          SHA="$(shasum -a 256 "$DMG" | awk '{print $1}')"
+          # `goblin update install` refuses a release without this, in this format.
+          ( cd build && shasum -a 256 "MergeGoblin-$GOBLIN_VERSION.dmg" > SHA256SUMS )
+          ( cd build && shasum -a 256 -c SHA256SUMS )
+          sed -e "s/@VERSION@/$GOBLIN_VERSION/" -e "s/@SHA256@/$SHA/" packaging/merge-goblin.rb > build/merge-goblin.rb
+          {
+            echo "Download **MergeGoblin-$GOBLIN_VERSION.dmg**, open it and drag Merge Goblin to Applications."
+            if [ -z "${{ steps.sign.outputs.identity }}" ]; then
+              echo; echo "This build is not notarised: on first launch, open System Settings > Privacy & Security and click Open Anyway."
+            fi
+            echo; echo "Homebrew: \`brew install --cask Kiril-P/tap/merge-goblin\`"
+            echo; echo "sha256: \`$SHA\`"
+          } > build/notes.md
+          gh release create "$GITHUB_REF_NAME" "$DMG" build/SHA256SUMS build/merge-goblin.rb --title "Merge Goblin $GOBLIN_VERSION" --notes-file build/notes.md

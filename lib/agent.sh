@@ -56,6 +56,32 @@ agent_on()  { launchctl enable "gui/$(id -u)/${AGENT_LABEL}" 2>/dev/null || true
 # which is both more reliable than one second and faster when the job is already gone.
 agent_reload() { agent_stop; agent_start; }
 
+# agent_install — write the launchd plist for THIS copy of the engine and load it.
+#
+# install.sh does the same for a source install. This exists for everyone else: the
+# app, a Homebrew cask and a downloaded disk image carry the engine inside the bundle
+# and never run install.sh, so without it nothing would ever watch their repos.
+# The plist points at wherever this engine lives. For an app in /Applications that
+# path survives updates (the bundle is replaced whole); an app run from ~/Downloads
+# or ~/Documents may be unreadable to launchd, which is why doctor checks it.
+agent_install() {
+  local cli="$GOBLIN_APP/bin/$GOBLIN_SLUG" interval
+  [ -f "$TEMPLATE_DIR/launchd.plist.tmpl" ] || { echo "launchd template missing" >&2; return 1; }
+  interval="$(cfg_get '.intervalSeconds' 300)"
+  mkdir -p "$(dirname "$AGENT_PLIST")" || return 1
+  sed -e "s|__LABEL__|$AGENT_LABEL|g" \
+      -e "s|__CLI__|$cli|g" \
+      -e "s|__GOBLIN_HOME__|$GOBLIN_HOME|g" \
+      -e "s|__GOBLIN_APP__|$GOBLIN_APP|g" \
+      -e "s|__INTERVAL__|$interval|g" \
+      "$TEMPLATE_DIR/launchd.plist.tmpl" > "$AGENT_PLIST"
+  if ! plutil -lint "$AGENT_PLIST" >/dev/null 2>&1; then
+    rm -f "$AGENT_PLIST"; echo "generated plist is invalid" >&2; return 1
+  fi
+  agent_stop; agent_on
+  agent_running
+}
+
 # --- github identity ------------------------------------------------------
 
 # The account gh would use by default. Read offline from hosts.yml — no network,

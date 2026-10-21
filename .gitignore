@@ -3,12 +3,10 @@
 *.log
 tests/fixtures/tmp/
 
-# python bytecode — two .pyc files were tracked in the predecessor repo and got
-# copied into every install. server.py is on its way out entirely, but keep the
-# gate so build artefacts can never be committed again.
-__pycache__/
-*.pyc
-
-# compiled menu bar app: built on-machine by install.sh, never committed
-app/.build/
+# the Swift app: built on-machine by install.sh / build.sh, never committed
+.build/
+build/
 *.xcuserdatad
+
+# local agent state
+.claude/

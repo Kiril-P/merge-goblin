@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- Menu bar glyph: one silhouette, eyes/grin/fangs knocked out by the even-odd rule.
+       Template image: macOS tints it, so it is black here and nothing else. -->
+  <path fill-rule="evenodd" fill="#000" d="
+    M32 2 C39 6 47 13 49.5 26 L63 17 C61 31 56 39 50.5 42
+    C49 53 42 61 32 61 C22 61 15 53 13.5 42 C8 39 3 31 1 17 L14.5 26 C17 13 25 6 32 2 Z
+    M16.5 30.5 L29 35.5 L27.5 39.5 C22.5 40 18.5 37 16.5 30.5 Z
+    M47.5 30.5 L35 35.5 L36.5 39.5 C41.5 40 45.5 37 47.5 30.5 Z
+    M19 45.5 L45 45.5 C44 52.5 38.5 55 32 55 C25.5 55 20 52.5 19 45.5 Z
+    M23.5 45.5 L26.5 51.5 L29.5 45.5 Z
+    M34.5 45.5 L37.5 51.5 L40.5 45.5 Z"/>
+</svg>

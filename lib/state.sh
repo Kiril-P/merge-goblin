@@ -132,7 +132,11 @@ ui_setup_complete() {
 # One precomputed blob the control panel reads, so the UI never has to shell out
 # per field. Refreshed by every writer.
 ui_state_write() {
-  local st stats running disabled installed inbox stuck now interval update
+  # The published state describes the machine's configuration, never one job's
+  # overlay — a review run with a different model must not make the panel claim the
+  # model changed.
+  local _overlay="${GOBLIN_CFG_OVERLAY:-}"; GOBLIN_CFG_OVERLAY=""
+  local st stats running disabled installed inbox stuck now interval update jobs
   st="$(cat "$STATUS" 2>/dev/null)"
   printf '%s' "$st" | jq -e . >/dev/null 2>&1 || st='{}'
   stats="$(compute_stats)"
@@ -158,6 +162,7 @@ ui_state_write() {
     [ -z "$inbox" ] && inbox='{"waiting":0,"mine":0,"at":0,"stale":true}'
   fi
   stuck="$(attempt_stuck_json 2>/dev/null)"; [ -z "$stuck" ] && stuck='[]'
+  jobs="$(jobs_counts_json 2>/dev/null)"; [ -z "$jobs" ] && jobs='{"active":0,"ready":0}'
 
   printf '%s' "$st" | jq \
     --argjson stats "$stats" \
@@ -171,15 +176,19 @@ ui_state_write() {
     --argjson snoozeUntil "$(cfg_get '.snoozeUntil' 0)" \
     --argjson enabled "$(cfg_get '.enabled' true)" \
     --argjson setup "$(ui_setup_complete)" \
-    --argjson repos "$(cfg_get_json '[.repos[]? | {slug, enabled: (.enabled != false)}]' '[]')" \
+    --argjson repos "$(cfg_get_json '[.repos[]? | {slug, enabled: (.enabled != false),
+        provider: (.provider // ""), model: (.model // "")}]' '[]')" \
     --argjson fleet "$(cfg_get_json '.fleet' '[]')" \
     --argjson inbox "$inbox" \
     --argjson stuck "$stuck" \
+    --argjson jobs "$jobs" \
     --argjson settings "$(cfg_get_json '{
         verdictMode, allowApprove, budgetCapUsd, maxReviewsPerDay, maxReviewsPerRun,
         maxFindings, intervalSeconds, timeoutSecs, maxDiffBytes, incrementalReview,
-        postCommitStatus, postIntentComment, fleetAssignment, skipIfHumanReviewed,
+        postCommitStatus, postIntentComment, fleetAssignment, skipIfHumanReviewed, refutePass, autoPost, reviewMine, reviewMineDrafts,
+        manualReviewMode, maxConcurrentJobs, lastRepo,
         notify,
+        skip: {bots: (.skip.bots != false), docsOnly: (.skip.docsOnly == true)},
         providers: (.providers | with_entries(.value |= {model}))
       }' '{}')" \
     --argjson running "$running" --argjson disabled "$disabled" \
@@ -210,6 +219,7 @@ ui_state_write() {
       fleet: $fleet,
       inbox: $inbox,
       stuck: $stuck,
+      jobs: $jobs,
       agent: {running: $running, disabled: $disabled, installed: $installed, checkedAt: $checkedAt}
     }
     # The menu bar glyph is decided HERE, in bash, not in Swift. Swift is then a
@@ -240,7 +250,7 @@ ui_state_write() {
         glyph: (
           if ($s.setup.complete | not) then "error"
           elif ($s.agent.disabled or ($s.enabled | not)) then "off"
-          elif $s.state == "reviewing" then "reviewing"
+          elif ($s.state == "reviewing" or ($s.jobs.active // 0) > 0) then "reviewing"
           elif $err then "error"
           elif $s.state == "snoozed" then "snoozed"
           elif $s.pausedReason == "quota" then "quota"
@@ -262,4 +272,5 @@ ui_state_write() {
           elif $s.state == "paused" then "paused"
           else "idle — \($s.inbox.waiting // 0) waiting" end)
       }' 2>/dev/null | atomic_write "$UISTATE" || true
+  GOBLIN_CFG_OVERLAY="$_overlay"
 }

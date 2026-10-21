@@ -32,11 +32,14 @@ jobs:
           fi
 
       - name: jq programs compile
+        # Every program gets the variables its callers pass, so an undefined variable or
+        # a syntax error shows up as "compile error" and fails the build. A runtime error
+        # on the empty input is expected (validate.jq halts on purpose). The old check
+        # passed anything with an exit code of 5 or less, which included compile errors.
         run: |
-          for f in share/jq/*.jq templates/*.jq; do
-            jq -n -f "$f" >/dev/null 2>&1 || rc=$?
-            if [ "${rc:-0}" -gt 5 ]; then echo "compile error in $f"; exit 1; fi
-            unset rc
+          for f in share/jq/*.jq; do
+            err="$(jq -n --argjson max 25 --argjson ok '[[]]' -f "$f" 2>&1 >/dev/null || true)"
+            case "$err" in *"compile error"*) echo "$f: $err"; exit 1 ;; esac
           done
 
       - name: schemas parse
@@ -45,23 +48,16 @@ jobs:
       - name: tests
         run: ./tests/run.sh
 
-      - name: menu bar app compiles
-        # The app is Swift but needs no Xcode project: AppKit and WebKit are in the
-        # Command Line Tools alone. Building it here is the only thing that catches a
-        # panel resource added to share/ui but never wired into ResourceScheme, and a
-        # compile break in code the shell suite cannot reach.
+      - name: menu bar app builds
+        # Catches a compile break in code the shell suite cannot reach, and a bundle
+        # that came out without its engine.
         run: |
-          GOBLIN_HOME="$RUNNER_TEMP/apphome" \
-          GOBLIN_APP_BUNDLE="$RUNNER_TEMP/MergeGoblin.app" \
-            ./bin/goblin app build
-          test -x "$RUNNER_TEMP/MergeGoblin.app/Contents/MacOS/GoblinBar"
-          # The bundle is useless without this key — the app pins the CLI path from
-          # it and fails closed if it is missing, which is exactly how a half-written
-          # bundle used to surface as "the CLI path is missing from the app bundle".
-          plutil -extract GBLCLIPath raw "$RUNNER_TEMP/MergeGoblin.app/Contents/Info.plist"
+          ./build.sh --out "$RUNNER_TEMP/out"
+          test -x "$RUNNER_TEMP/out/Merge Goblin.app/Contents/MacOS/GoblinBar"
+          test -x "$RUNNER_TEMP/out/Merge Goblin.app/Contents/Resources/engine/bin/goblin"
 
-      - name: app command allowlist tests
-        run: GOBLIN_HOME="$RUNNER_TEMP/apphome" ./bin/goblin app test
+      - name: app unit tests
+        run: swift test
 
       - name: install smoke test
         # Runs install.sh unmodified. The runner has no AI CLI and no interactive

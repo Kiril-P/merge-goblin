@@ -32,6 +32,15 @@ def canon_suggested:
   schema_version: 1,
   summary: (.summary // ""),
   suggested_verdict: (.suggested_verdict | canon_suggested),
+  assessment: (
+    if (.assessment | type) == "object"
+       and ((.assessment.risk // "" | ascii_downcase) | IN("low","medium","high"))
+    then { risk: (.assessment.risk | ascii_downcase),
+           blast_radius: ((.assessment.blast_radius // "") | .[0:300]) }
+    else null end
+  ),
+  # Positive evidence only: "no longer flagged" is replied ONLY for an id listed here.
+  fixed_prior: ([ .fixed_prior[]? | strings | select(test("^[0-9a-f]{6,64}$")) ] | unique | .[0:50]),
   intent_note: (
     if (.intent_note | type) == "object" then
       { issue:   (.intent_note.issue // ""),
@@ -61,7 +70,18 @@ def canon_suggested:
       # hash function; base64-truncation would only reflect the prefix).
       | . + { idRaw: ((.path // "repo") + "\n" + (.title | ascii_downcase)) }
     ]
-    | unique_by(.idRaw)
+    # The same remark on different lines of one file is several findings, not one. Only
+    # an exact repeat (same place, same words) is dropped. The n-th occurrence of a
+    # title in a file gets a suffix so ids stay distinct; the first keeps the id it
+    # always had.
+    | unique_by([.idRaw, .line, .side, .start_line])
+    | sort_by([.path // "", .line // 0])
+    | reduce .[] as $f ({seen: {}, out: []};
+        $f.idRaw as $k
+        | (.seen[$k] // 0) as $n
+        | .seen[$k] = $n + 1
+        | .out += [ if $n == 0 then $f else $f + {idRaw: ($f.idRaw + "\n#" + ($n | tostring))} end ])
+    | .out
     | sort_by([ (.severity | sevrank), (.path // ""), (.line // 0) ])
     | .[0:$max]
   )

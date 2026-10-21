@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Fake `claude` that returns one anchored finding, so the preview/post path has
+# something to edit. CLAUDE_FAKE_SLOW=<secs> makes it hang, for the cancel test.
+# CLAUDE_FAKE_PROMPT_OUT=<file> keeps the prompt it was given; CLAUDE_FAKE_ARGS_OUT its argv.
+case "${1:-}" in
+  --version) echo "0.0.0-fake" ;;
+  auth) echo '{"loggedIn":true,"authMethod":"fake","subscriptionType":"test"}' ;;
+  -p)
+    if [ -n "${CLAUDE_FAKE_PROMPT_OUT:-}" ]; then cat > "$CLAUDE_FAKE_PROMPT_OUT"; else cat >/dev/null; fi
+    [ -n "${CLAUDE_FAKE_ARGS_OUT:-}" ] && printf '%s\n' "$@" > "$CLAUDE_FAKE_ARGS_OUT"
+    [ -n "${CLAUDE_FAKE_SLOW:-}" ] && sleep "$CLAUDE_FAKE_SLOW"
+    cat <<'JSON'
+{"type":"result","is_error":false,"num_turns":1,"total_cost_usd":0.25,
+ "usage":{"input_tokens":1,"output_tokens":1},
+ "structured_output":{"schema_version":1,"summary":"Adds a widget.","suggested_verdict":"comment",
+   "findings":[
+     {"severity":"blocker","title":"Unchecked input","body":"The new line trusts its input.","path":"src/a.js","line":3,"side":"RIGHT"},
+     {"severity":"nit","title":"Naming","body":"Could be clearer.","path":"src/a.js","line":2,"side":"RIGHT"}],
+   "intent_note":null}}
+JSON
+    ;;
+esac
+exit 0

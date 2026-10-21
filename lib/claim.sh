@@ -70,12 +70,20 @@ EOF
 }
 
 # claim_try <slug> <pr> <head> -> 0 won · 1 lost · 2 refs forbidden (use fallback)
+#                                 3 could not tell (network, 5xx, rate limit): try again
+#                                   next cycle, and do NOT remember this PR as taken.
 claim_try() {
-  local slug="$1" pr="$2" head="$3" ref code
+  local slug="$1" pr="$2" head="$3" ref code resp
   ref="$(claim_ref_name "$pr" "$head")"
 
-  code="$(gh api -X POST "repos/$slug/git/refs" -f ref="$ref" -f sha="$head" \
-            --include --silent 2>/dev/null | head -1 | awk '{print $2}')"
+  resp="$(gh api -X POST "repos/$slug/git/refs" -f ref="$ref" -f sha="$head" \
+            --include --silent 2>/dev/null)"
+  code="$(printf '%s' "$resp" | head -1 | awk '{print $2}')"
+  # A rate limit is also a 403. Switching the whole machine to comment claims for
+  # that would be permanent, so only a plain permission refusal counts.
+  if [ "$code" = 403 ] && printf '%s' "$resp" | grep -qiE '^(x-ratelimit-remaining: 0|retry-after:)'; then
+    code=429
+  fi
 
   case "$code" in
     201)
@@ -94,9 +102,9 @@ claim_try() {
       claim_reclaim_if_stale "$slug" "$pr" "$head" && return 0
       return 1 ;;
     *)
-      # Network/5xx: fail safe. A missed cycle costs 15 minutes; a double review
-      # costs the team's trust.
-      return 1 ;;
+      # Network/5xx/rate limit: fail safe. A missed cycle costs 15 minutes; a double
+      # review costs the team's trust. Not "lost" though: nobody else holds it.
+      return 3 ;;
   esac
 }
 
@@ -155,7 +163,7 @@ claim_release() {
 # Drop claims left behind for commits that have since been superseded.
 claim_sweep() {
   local slug="$1" pr="$2" head="$3"
-  gh api "repos/$slug/git/matching-refs/$GOBLIN_SLUG/claim/pr-$pr" --jq '.[].ref' 2>/dev/null \
+  gh api "repos/$slug/git/matching-refs/$GOBLIN_SLUG/claim/pr-$pr/" --jq '.[].ref' 2>/dev/null \
     | grep -v "/${head}$" \
     | while IFS= read -r r; do [ -n "$r" ] && claim_delete_ref "$slug" "$r"; done
 }
@@ -176,8 +184,11 @@ claim_try_comment() {
   sleep 20   # settle window: must exceed API read-after-write lag and clock skew
 
   local winner
-  winner="$(gh api --paginate "repos/$slug/issues/$pr/comments?per_page=100" --jq \
-    "[.[] | select(.body != null and (.body | contains(\"$GOBLIN_MARKER_NS:claim\")) and (.body | contains(\"$head\"))) | .id] | min" 2>/dev/null)"
+  # The minimum over ALL pages: per page (`--paginate --jq`), page one of a busy PR said
+  # `null`, the real winner came second, and nobody ever matched `$mine`.
+  winner="$(gh_api_all "repos/$slug/issues/$pr/comments?per_page=100" \
+    | jq -r --arg c "$GOBLIN_MARKER_NS:claim" --arg h "$head" \
+        '[.[] | select(.body != null and (.body | contains($c)) and (.body | contains($h))) | .id] | min // empty' 2>/dev/null)"
   if [ "$winner" = "$mine" ]; then
     CLAIM_COMMENT_ID="$mine"; CLAIM_SLUG="$slug"
     return 0

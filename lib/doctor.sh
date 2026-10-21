@@ -170,8 +170,16 @@ doctor_repos() {
 
 doctor_agent() {
   if [ ! -f "$AGENT_PLIST" ]; then
-    _doc warn "scheduler" "not installed" "./install.sh"; return
+    _doc warn "scheduler" "not installed" "$GOBLIN_SLUG agent install"; return
   fi
+  # launchd cannot read these folders (macOS privacy), so a schedule whose engine
+  # lives in one of them loads fine and then silently never runs.
+  local engine; engine="$(plutil -extract EnvironmentVariables.GOBLIN_APP raw "$AGENT_PLIST" 2>/dev/null)"
+  case "$engine" in
+    "$HOME"/Documents/*|"$HOME"/Downloads/*|"$HOME"/Desktop/*)
+      _doc fail "scheduler" "runs from $engine, which launchd cannot read" \
+        "move the app to /Applications, then: $GOBLIN_SLUG agent install" ;;
+  esac
   if agent_disabled; then
     _doc warn "scheduler" "turned off (persistent)" "$GOBLIN_SLUG on"
   elif agent_running; then
@@ -181,7 +189,8 @@ doctor_agent() {
     else _doc warn "scheduler" "not loaded" "$GOBLIN_SLUG agent start"; fi
   fi
   if [ -d "$LOCKDIR" ]; then
-    if [ -n "$(find "$LOCKDIR" -maxdepth 0 -mmin +180 2>/dev/null)" ]; then
+    if { [ -s "$LOCKDIR/pid" ] && ! kill -0 "$(cat "$LOCKDIR/pid")" 2>/dev/null; } \
+       || [ -n "$(find "$LOCKDIR" -maxdepth 0 -mmin +180 2>/dev/null)" ]; then
       if [ "$DOC_FIX" = true ]; then rm -rf "$LOCKDIR"; _doc ok "lock" "stale lock removed"
       else _doc warn "lock" "stale lock held" "$GOBLIN_SLUG doctor --fix"; fi
     else
@@ -191,12 +200,11 @@ doctor_agent() {
 }
 
 doctor_menu() {
-  . "$LIB_DIR/ui.sh"
-  local py
-  if py="$(ui_python)"; then
-    _doc ok "control panel" "ready — run: $GOBLIN_SLUG ui   ($py)"
+  . "$LIB_DIR/app.sh"
+  if [ -x "$(app_exec_path)" ]; then
+    _doc ok "menu bar app" "installed — run: $GOBLIN_SLUG ui"
   else
-    _doc warn "control panel" "needs python3" "xcode-select --install"
+    _doc warn "menu bar app" "not installed" "$GOBLIN_SLUG app rebuild   (from a git checkout)"
   fi
 }
 

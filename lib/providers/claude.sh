@@ -41,21 +41,55 @@ provider_claude_review() {
   to="$(cfg_get '.timeoutSecs' 900)"
   t0="$(now_epoch)"
 
-  # --tools "" removes all tool access: with the model no longer posting, it only
-  # needs to read the prompt we already assembled. No bypassPermissions anywhere.
+  # What the model may touch. With a checkout of the pull request it gets Read, Grep and
+  # Glob and nothing else — no Bash, no Write, no network — so it can check a claim
+  # against the real code instead of guessing from the diff. Without one it gets no tools.
+  #
+  # The checkout is the PR author's: it can hold a .claude/settings.json (hooks), a
+  # .mcp.json and a CLAUDE.md, all of which `claude -p` would obey if it ran in there.
+  # So it runs in an empty directory with the checkout added as readable, and only the
+  # user's own settings are loaded. dontAsk turns every other permission request into a
+  # refusal instead of a prompt nobody can answer. No bypassPermissions anywhere.
   #
   # The prompt goes in on STDIN, not as a positional arg: --tools is variadic and
   # would otherwise swallow the prompt as a tool name ("Input must be provided
   # either through stdin or as a prompt argument"). Redirecting from the prompt
   # file also keeps `claude -p`'s stdin drain away from the engine's PR loop.
-  ( cd "$dir" 2>/dev/null || exit 1
-    run_with_timeout "$to" "$bin" -p \
-      --model "$model" \
-      --output-format json \
-      --json-schema "$(cat "$schema")" \
-      --tools "" \
-      > "$raw/stdout.json" 2> "$raw/stderr.txt" < "$pf"
-  ) || rc=$?
+  #
+  # Allowing plain `Read` is NOT confinement: tested, it happily reads /etc/hosts and
+  # ~/.zshrc from a session whose directory is somewhere else. Each tool is therefore
+  # allowed only for paths under the checkout, and everything else is denied by dontAsk.
+  # A path containing a space cannot be written into the comma/space-separated list, so
+  # such a checkout is treated as not readable rather than risking a wider rule.
+  local cwd="$raw/cwd"; mkdir -p "$cwd"
+  local scope="/$dir/**"
+  case "$dir" in *[[:space:],\(\)]*) scope="" ;; esac
+  if [ -d "$dir/.git" ] && [ -n "$scope" ]; then
+    ( cd "$cwd" || exit 1
+      run_with_timeout "$to" "$bin" -p \
+        --model "$model" \
+        --output-format json \
+        --json-schema "$(cat "$schema")" \
+        --tools "Read,Grep,Glob" \
+        --allowedTools "Read($scope)" "Grep($scope)" "Glob($scope)" \
+        --permission-mode dontAsk \
+        --add-dir "$dir" \
+        --setting-sources user \
+        --strict-mcp-config \
+        > "$raw/stdout.json" 2> "$raw/stderr.txt" < "$pf"
+    ) || rc=$?
+  else
+    ( cd "$cwd" || exit 1
+      run_with_timeout "$to" "$bin" -p \
+        --model "$model" \
+        --output-format json \
+        --json-schema "$(cat "$schema")" \
+        --tools "" \
+        --setting-sources user \
+        --strict-mcp-config \
+        > "$raw/stdout.json" 2> "$raw/stderr.txt" < "$pf"
+    ) || rc=$?
+  fi
 
   GOBLIN_P_DURATION_MS=$(( ($(now_epoch) - t0) * 1000 ))
   GOBLIN_P_MODEL="$model"
@@ -89,4 +123,18 @@ provider_claude_review() {
   findings_extract "$raw/last.txt" "$out" && return 0
   GOBLIN_P_ERRKIND=bad_output; GOBLIN_P_ERRMSG="no JSON in response"
   return 2
+}
+
+# The models `claude --model` accepts. Aliases follow the latest release of each
+# family; the pinned ids are for people who want a review to stay on one version.
+provider_claude_models() {
+  jq -nc '[
+    {id:"sonnet", label:"Sonnet (latest)"},
+    {id:"opus",   label:"Opus (latest)"},
+    {id:"haiku",  label:"Haiku (latest)"},
+    {id:"claude-sonnet-5-5", label:"Sonnet 5.5"},
+    {id:"claude-opus-5-5",   label:"Opus 5.5"},
+    {id:"claude-haiku-5-5",  label:"Haiku 5.5"},
+    {id:"claude-fable-5-1",  label:"Fable 5.1"}
+  ]'
 }

@@ -122,22 +122,34 @@ post_intent() {
   fi
 }
 
-# post_fixed_replies <slug> <pr> <prior.json> <current-ids.json> <head>
-# Reply on threads whose finding is gone from the new run. Replies are comment
-# replies, not review events, so they don't recreate the multi-event spam.
+# post_fixed_replies <slug> <pr> <prior.json> <fixed-ids.json> <head>
+# Replies only on prior findings whose id the model listed in fixed_prior. Absence from
+# the new run proves nothing (the prompt says not to repeat a finding that stands).
+# Replies are comment replies, not review events, so they don't recreate the
+# multi-event spam.
 post_fixed_replies() {
-  local slug="$1" pr="$2" prior="$3" curids="$4" head="$5"
+  local slug="$1" pr="$2" prior="$3" fixedids="$4" head="$5"
   local gone i n cid
-  gone="$(jq -c --slurpfile cur "$curids" \
-    '[ .[] | select(.id != null) | select(($cur[0] | index(.id)) == null) ] | .[0:10]' \
+  # A declined finding is "gone" because it was dropped on purpose, not because it was
+  # fixed: telling the author it is "no longer flagged" on a thread where they just said
+  # "won't fix" would be both wrong and noise.
+  #
+  # `.id as $i` is load-bearing: `$fx[0] | index(.id)` evaluates `.id` against the ids
+  # ARRAY, which is a jq error, and selects nothing, silently.
+  gone="$(jq -c --slurpfile fx "$fixedids" \
+    '[ .[] | select(.id != null and .declined != true and .fixedReplied != true)
+       | select(.id as $i | ($fx[0] | index($i)) != null) ] | .[0:10]' \
     "$prior" 2>/dev/null)"
   n="$(printf '%s' "$gone" | jq 'length' 2>/dev/null || echo 0)"
   i=0
   while [ "$i" -lt "${n:-0}" ]; do
     cid="$(printf '%s' "$gone" | jq -r --argjson i "$i" '.[$i].commentId')"
     if [ -n "$cid" ] && [ "$cid" != "null" ]; then
+      # The marker says "this reply is the Goblin's": it posts under the user's login, so
+      # without one, stats and the decline heuristic would read it as a person replying.
       gh api -X POST "repos/$slug/pulls/$pr/comments/$cid/replies" \
-        -f body="✅ no longer flagged as of \`$(trunc "$head" 7)\` — $GOBLIN_NAME" \
+        -f body="$(render_marker fixed "$(jq -nc --arg h "$head" '{v:1,headSha:$h}')")
+✅ no longer flagged as of \`$(trunc "$head" 7)\` — $GOBLIN_NAME" \
         --silent >/dev/null 2>&1 || true
     fi
     i=$((i + 1))

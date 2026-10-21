@@ -20,6 +20,11 @@ fence around it.
       "suggestion": "optional replacement code for exactly those lines"
     }
   ],
+  "assessment": {
+    "risk": "low" | "medium" | "high",
+    "blast_radius": "one sentence: what breaks, and for whom, if this change is wrong"
+  },
+  "fixed_prior": ["a23f9e0f2eda"],
   "intent_note": {
     "issue": "TICKET-123",
     "verdict": "fulfils" | "partial" | "diverges" | "unknown" | "no_ticket",
@@ -39,15 +44,31 @@ in the diff below:
 - A finding whose line is not in the diff is still valuable: include it with the correct
   `path` and omit `line`. It will be reported in the summary instead of inline.
 
-**Severity**
+**Severity — grade by consequence**
 
 | value | use for |
 |---|---|
-| `blocker` | a bug/regression, or something the repo's rules say to block on |
+| `blocker` | merging this would cause harm that does not fix itself: data loss or corruption, a security hole, a crash or outage on a normal path, wrong results shipped silently, a broken build or deploy — or something the repo's rules explicitly say to block on. You can name the exact input or condition that triggers it. |
 | `convention` | violates a required repo standard listed above |
-| `risk` | plausible problem you could not fully verify |
+| `risk` | plausible problem you could not fully verify, or a real one whose impact is limited or recoverable |
 | `nit` | minor; only if it breaks a required standard |
 | `question` | genuinely needs the author to answer |
+
+Models over-grade, so be stingy with `blocker`. These are **never** a blocker: a missing
+or thin test, missing docs or comments, naming or style, a performance concern you did not
+measure, a theoretical edge case, an error that is logged and retried, anything you are
+unsure about. A missing test is at most a `convention` (if the repo requires one) or a
+`risk`. If the consequence would heal itself or be caught immediately, it is not a blocker.
+
+**`assessment`** is the at-a-glance read for the person deciding whether to look closer:
+`low` for a contained change with an easy rollback, `high` for anything touching money, auth,
+data, migrations or a shared interface many callers depend on. It is about the change, not
+about how many findings you made. Set it to `null` if you cannot tell.
+
+**`fixed_prior`** lists the ids of findings from "Findings already posted" that the
+current code has fixed. Check the code for each one before you list it: the author is
+told it is fixed. Leave out anything still present, anything you could not check, and
+anything declined. An empty list when there was nothing posted before.
 
 **`suggestion`** must be the exact replacement text for the commented line range —
 omit it unless it applies cleanly on its own.

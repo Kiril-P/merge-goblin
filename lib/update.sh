@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# update.sh — tell people a newer Goblin exists. It NEVER installs anything.
+# update.sh — tell people a newer Goblin exists. Checking NEVER installs anything.
 #
-# Deliberately notify-only. Applying an update means overwriting the code that
-# is currently executing, reloading launchd and replacing the .app bundle, and a
-# single bad push would then break every teammate at once with nobody having
-# chosen to accept it. So this only ever writes a flag; a human runs the two
-# commands. Upgrading stays exactly what it already was: git pull, ./install.sh.
+# The check is notify-only. Applying an update means replacing the code that is
+# currently executing, and a single bad push would then break every teammate at
+# once with nobody having chosen to accept it. So this only ever writes a flag.
+# Installing is a separate, explicit act: `goblin update install` (the app's
+# "Install update" button), which lives in update_install.sh and verifies what it
+# downloads before touching anything. A source checkout upgrades the way it always
+# did: git pull, ./install.sh.
 #
 # The check is one authenticated `gh api` call per day, to this project's own
 # repo, piggybacked on a scheduled run that was going to talk to GitHub anyway.
@@ -34,10 +36,33 @@ update_newer() {
   return 1
 }
 
-# The version on the default branch — what `git pull && ./install.sh` would give
-# you. Not a release tag: tags could sit ahead of or behind what a pull installs,
-# and the whole point is to describe the upgrade the user will actually perform.
+# update_target_app — the .app bundle this engine was shipped inside, or rc 1.
+#
+# The app carries its engine at <App>.app/Contents/Resources/engine, so GOBLIN_APP
+# says which bundle is running (also through the Homebrew `goblin` symlink, which
+# bin/goblin resolves). A source checkout has no bundle to replace.
+update_target_app() {
+  case "${GOBLIN_APP:-}" in */Contents/Resources/engine) ;; *) return 1 ;; esac
+  local app="${GOBLIN_APP%/Contents/Resources/engine}"
+  case "$app" in /*.app) ;; *) return 1 ;; esac
+  [ -d "$app" ] || return 1
+  printf '%s' "$app"
+}
+
+# The version an upgrade would actually give you.
+#
+# An app bundle upgrades from a published release, so it asks for the latest one
+# (GitHub's "latest" never includes drafts or prereleases; the filter says so
+# anyway). A source checkout upgrades with `git pull`, so it reads the version on
+# the default branch instead: tags could sit ahead of or behind what a pull
+# installs, and the point is to describe the upgrade the user will perform.
 update_remote_version() {
+  if update_target_app >/dev/null; then
+    gh api "repos/$GOBLIN_REPO_SLUG/releases/latest" \
+       --jq 'select((.draft | not) and (.prerelease | not)) | .tag_name' 2>/dev/null \
+      | sed 's/^v//' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -1
+    return 0
+  fi
   gh api "repos/$GOBLIN_REPO_SLUG/contents/lib/brand.sh" \
      -H "Accept: application/vnd.github.raw" 2>/dev/null \
     | grep -m1 '^GOBLIN_VERSION=' \
@@ -85,8 +110,10 @@ update_check() {
   if [ -n "$latest" ] && update_newer "$latest" "$GOBLIN_VERSION"; then avail=true; fi
   [ -n "$latest" ] || latest="$(update_field '.latest' '')"
 
+  local url="$GOBLIN_REPO_URL"
+  update_target_app >/dev/null && url="$GOBLIN_REPO_URL/releases/latest"
   jq -nc --arg latest "$latest" --arg current "$GOBLIN_VERSION" \
-     --arg url "$GOBLIN_REPO_URL" --argjson avail "$avail" \
+     --arg url "$url" --argjson avail "$avail" \
      --argjson at "$(now_epoch)" \
      '{checkedAt:$at, latest:$latest, current:$current, available:$avail, url:$url}' \
      > "$UPDATE_STATE.tmp" 2>/dev/null \
@@ -95,13 +122,24 @@ update_check() {
   return 0
 }
 
-# What to tell someone to do about it. There is no recorded clone path, so this
-# names the repo rather than pretending to know where their checkout is.
+# What to tell someone to do about it. There is no recorded clone path, so a
+# source install names the repo rather than pretending to know where it is.
 update_instructions() {
-  printf 'in your %s clone: git pull && ./install.sh' "$GOBLIN_SLUG"
+  if update_target_app >/dev/null; then
+    printf 'choose Install update in the %s menu, or run: %s update install' "$GOBLIN_SHORT" "$GOBLIN_SLUG"
+  else
+    printf 'in your %s clone: git pull && ./install.sh' "$GOBLIN_SLUG"
+  fi
 }
 
+# goblin update [check]                        look for a newer version; installs nothing
+# goblin update install [--json] [--relaunch]  replace this app with the latest release
 cmd_update() {
+  case "${1:-}" in
+    install) shift; . "$LIB_DIR/update_install.sh"; cmd_update_install "$@"; return $? ;;
+    ""|check) ;;
+    *) echo "usage: $GOBLIN_SLUG update [check | install [--json] [--relaunch]]" >&2; return 2 ;;
+  esac
   cfg_ensure; cfg_backfill_defaults
   update_check --force
   local latest

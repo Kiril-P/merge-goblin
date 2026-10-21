@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Fake `gh` for `goblin fleet status`: serves claim meta refs and comment pages.
+#   FLEET_FAKE_LOG      one line per call
+#   FLEET_FAKE_DIR      refs.json, pulls-comments.json, issues-comments.json (missing = [])
+#   FLEET_FAKE_OFFLINE  1 = every repo read fails (GitHub unreachable)
+#   FLEET_FAKE_NOAUTH   1 = `gh api user` fails too
+[ -n "${FLEET_FAKE_LOG:-}" ] && printf '%s\n' "$*" >> "$FLEET_FAKE_LOG"
+case "${1:-}" in
+  auth) [ "${2:-}" = token ] && echo gho_fake; exit 0 ;;
+  api) ;;
+  *) exit 0 ;;
+esac
+shift
+method=GET; path=""; jqf="."
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -X) method="$2"; shift 2 ;;
+    --jq|-q) jqf="$2"; shift 2 ;;
+    -f|-F|--field|--raw-field|--input) shift 2 ;;
+    -*) shift ;;
+    *) [ -z "$path" ] && path="$1"; shift ;;
+  esac
+done
+# fleet status must never write; a write is recorded so the test can fail on it.
+[ "$method" = GET ] || { echo "WRITE $method $path" >> "${FLEET_FAKE_LOG:-/dev/null}"; exit 1; }
+serve() { if [ -f "$FLEET_FAKE_DIR/$1" ]; then jq -c "$jqf" "$FLEET_FAKE_DIR/$1"; else echo '[]'; fi; }
+case "${path%%\?*}" in
+  user) [ "${FLEET_FAKE_NOAUTH:-}" = 1 ] && exit 1; echo '{"login":"me"}' | jq -r "$jqf" ;;
+  *) [ "${FLEET_FAKE_OFFLINE:-}" = 1 ] && exit 1
+     case "${path%%\?*}" in
+       */git/matching-refs/*) serve refs.json ;;
+       */pulls/comments) serve pulls-comments.json ;;
+       */issues/comments) serve issues-comments.json ;;
+       *) echo '[]' ;;
+     esac ;;
+esac

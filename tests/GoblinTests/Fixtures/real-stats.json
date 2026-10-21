@@ -1,0 +1,56 @@
+{
+  "days": 30,
+  "at": 1792509818,
+  "prs": 2,
+  "looked": 2,
+  "skipped": 0,
+  "findings": 8,
+  "addressed": 4,
+  "discussed": 2,
+  "silent": 2,
+  "addressedRate": 0.5,
+  "bySeverity": {
+    "blocker": {
+      "n": 2,
+      "addressed": 2,
+      "discussed": 0,
+      "silent": 0
+    },
+    "convention": {
+      "n": 2,
+      "addressed": 0,
+      "discussed": 2,
+      "silent": 0
+    },
+    "nit": {
+      "n": 2,
+      "addressed": 0,
+      "discussed": 0,
+      "silent": 2
+    },
+    "risk": {
+      "n": 2,
+      "addressed": 2,
+      "discussed": 0,
+      "silent": 0
+    }
+  },
+  "perPr": [
+    {
+      "slug": "acme/widgets",
+      "pr": 6,
+      "findings": 4,
+      "addressed": 2,
+      "discussed": 1,
+      "silent": 1
+    },
+    {
+      "slug": "acme/widgets",
+      "pr": 5,
+      "findings": 4,
+      "addressed": 2,
+      "discussed": 1,
+      "silent": 1
+    }
+  ]
+}

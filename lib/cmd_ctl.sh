@@ -66,26 +66,52 @@ cmd_ctl() {
         echo "daily cap set to \$$(cfg_get '.budgetCapUsd' 0)"
       fi ;;
 
-    repos)
+    repos|repo)
       local sub="${1:-list}"; shift 2>/dev/null || true
       case "$sub" in
-        list|"") cfg_read | jq -r '.repos[]? | "\(if .enabled != false then "on " else "off" end)  \(.slug)"' ;;
+        list|"") cfg_read | jq -r '.repos[]? | "\(if .enabled != false then "on " else "off" end)  \(.slug)\(if (.provider // "") != "" then "  (\(.provider)\(if (.model // "") != "" then "/" + .model else "" end))" else "" end)"' ;;
         search)  . "$LIB_DIR/discover.sh"; cmd_repos_search "$@" ;;
         add)     cfg_repo_add "$1"; status_set '{}'; echo "added $1" ;;
         rm)      cfg_repo_rm "$1";  status_set '{}'; echo "removed $1" ;;
         enable)  cfg_repo_enable "$1" true;  status_set '{}'; echo "enabled $1" ;;
         disable) cfg_repo_enable "$1" false; status_set '{}'; echo "disabled $1" ;;
-        *) echo "usage: $GOBLIN_SLUG repos [list|search|add SLUG|rm SLUG|enable SLUG|disable SLUG]" >&2; return 2 ;;
+        provider)
+          # goblin repo provider <slug> <claude|codex|cursor|default> [model]
+          local rs="${1:-}" rp="${2:-}" rmodel="${3:-}" rc
+          if [ -z "$rs" ] || [ -z "$rp" ]; then
+            echo "usage: $GOBLIN_SLUG repo provider <owner/name> <claude|codex|cursor|default> [model]" >&2; return 2
+          fi
+          cfg_repo_set_provider "$rs" "$rp" "$rmodel"; rc=$?
+          case "$rc" in
+            0) status_set '{}'
+               case "$rp" in default) echo "$rs follows the global provider again" ;;
+                 *) echo "$rs is reviewed with $rp${rmodel:+/$rmodel}" ;; esac ;;
+            1) echo "$rs is not a watched repo (add it first: $GOBLIN_SLUG repos add $rs)" >&2; return 1 ;;
+            *) echo "refused: provider must be claude, codex, cursor or default; model letters, digits and . _ : - only" >&2; return 2 ;;
+          esac ;;
+        *) echo "usage: $GOBLIN_SLUG repos [list|search|add SLUG|rm SLUG|enable SLUG|disable SLUG|provider SLUG PROVIDER [MODEL]]" >&2; return 2 ;;
       esac ;;
 
     provider)
       local sub="${1:-which}"; shift 2>/dev/null || true
       . "$LIB_DIR/providers.sh"
       case "$sub" in
-        list)  providers_report ;;
+        list)
+          # The app asks for --json (and --refresh); the text report ignored both, the
+          # app could not parse it, and the panel said "no AI CLIs found" with three
+          # of them installed and signed in. Probes are live — there is no cache to
+          # refresh — so --refresh is accepted and means nothing.
+          case "${1:-}" in
+            --json|--refresh)
+              providers_probe_all | jq -c --arg cur "$(cfg_get '.provider' claude)" \
+                --argjson models "$(cfg_get_json '.providers | with_entries(.value |= (.model // ""))' '{}')" \
+                'map(. + {current: (.name == $cur), model: ($models[.name] // "")})' ;;
+            *) providers_report ;;
+          esac ;;
+        models) providers_models "${1:-}" "${2:-}" ;;
         use)   providers_set "$1" ;;
         which|"") echo "$(cfg_get '.provider' claude) ($(cfg_get ".providers.$(cfg_get '.provider' claude).model" 'default model'))" ;;
-        *) echo "usage: $GOBLIN_SLUG provider [list|use <id>|which]" >&2; return 2 ;;
+        *) echo "usage: $GOBLIN_SLUG provider [list|models <id>|use <id>|which]" >&2; return 2 ;;
       esac ;;
 
     fleet)
@@ -94,7 +120,8 @@ cmd_ctl() {
         list|"") cfg_read | jq -r '.fleet[]?' ;;
         add) cfg_set --arg l "$1" 'if (.fleet | index($l)) then . else .fleet += [$l] end'; echo "fleet: $(cfg_read | jq -r '.fleet | join(", ")')" ;;
         rm)  cfg_set --arg l "$1" '.fleet |= map(select(. != $l))'; echo "fleet: $(cfg_read | jq -r '.fleet | join(", ")')" ;;
-        *) echo "usage: $GOBLIN_SLUG fleet [list|add LOGIN|rm LOGIN]" >&2; return 2 ;;
+        status) . "$LIB_DIR/fleet.sh"; cmd_fleet_status "$@" ;;
+        *) echo "usage: $GOBLIN_SLUG fleet [list|add LOGIN|rm LOGIN|status [--json] [--refresh]]" >&2; return 2 ;;
       esac ;;
 
     config)
@@ -120,11 +147,13 @@ cmd_ctl() {
                 echo "plist:    $AGENT_PLIST"
                 echo "running:  $(agent_running && echo yes || echo no)"
                 echo "disabled: $(agent_disabled && echo yes || echo no)" ;;
+        install) if agent_install; then echo "scheduled every $(cfg_get '.intervalSeconds' 300)s ($AGENT_LABEL)"
+                 else echo "the scheduler did not load — try: $GOBLIN_SLUG doctor" >&2; return 1; fi ;;
         start)  agent_start;  echo "started" ;;
         stop)   agent_stop;   echo "stopped" ;;
         reload) agent_reload; echo "reloaded" ;;
         label)  echo "$AGENT_LABEL" ;;
-        *) echo "usage: $GOBLIN_SLUG agent [status|start|stop|reload|label]" >&2; return 2 ;;
+        *) echo "usage: $GOBLIN_SLUG agent [status|install|start|stop|reload|label]" >&2; return 2 ;;
       esac ;;
 
     fix-account)
