@@ -84,8 +84,9 @@ jobs:
           {
             echo "Download **MergeGoblin-$GOBLIN_VERSION.dmg**, open it and drag Merge Goblin to Applications."
             if [ -z "${{ steps.sign.outputs.identity }}" ]; then
-              echo; echo "This build is not notarised: on first launch, right-click the app and choose Open."
+              echo; echo "This build is not notarised: on first launch, open System Settings > Privacy & Security and click Open Anyway."
             fi
+            echo; echo "Homebrew: \`brew install --cask Kiril-P/tap/merge-goblin\`"
             echo; echo "sha256: \`$SHA\`"
           } > build/notes.md
           gh release create "$GITHUB_REF_NAME" "$DMG" build/SHA256SUMS build/merge-goblin.rb --title "Merge Goblin $GOBLIN_VERSION" --notes-file build/notes.md

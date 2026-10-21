@@ -15,6 +15,13 @@ cask "merge-goblin" do
   # the engine ships inside the app; this puts its `goblin` command on the PATH
   binary "#{appdir}/Merge Goblin.app/Contents/Resources/engine/bin/goblin"
 
+  # Internal builds are not notarised yet. Remove this once releases are signed.
+  caveats <<~EOS
+    This build is not notarised. On first launch macOS will refuse to open it:
+    open System Settings > Privacy & Security and click "Open Anyway" next to
+    Merge Goblin. You only need to do this once per version.
+  EOS
+
   zap trash: [
     "~/.goblin",
     "~/Library/LaunchAgents/com.*.goblin.bar.plist",

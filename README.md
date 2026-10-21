@@ -60,16 +60,20 @@ paying for — and switching provider is one click.
 Requires macOS 14+, [`gh`](https://cli.github.com), `jq`, and at least one AI CLI you're signed
 into (`brew install gh jq` if you need the first two).
 
-**From a release** (none is published yet, so use source below for now) — download `MergeGoblin-<version>.dmg` from the
-[releases page](https://github.com/Kiril-P/merge-goblin/releases), drag **Merge Goblin** to
-Applications and open it. The first-run walkthrough takes it from there, including the
-scheduler that reviews in the background. Releases are notarised when the maintainer's Apple
-credentials are configured; if a build says it is not, right-click the app and choose **Open**
-once.
+**With Homebrew** (recommended):
 
 ```bash
-brew install --cask Kiril-P/tap/merge-goblin     # once the tap is published
+brew install --cask Kiril-P/tap/merge-goblin
 ```
+
+**Or from a release:** download `MergeGoblin-<version>.dmg` from the
+[releases page](https://github.com/Kiril-P/merge-goblin/releases), drag **Merge Goblin** to
+Applications and open it.
+
+Either way, the first-run walkthrough takes it from there, including the scheduler that
+reviews in the background. Builds are not notarised yet, so the first launch is refused:
+open **System Settings › Privacy & Security** and click **Open Anyway** next to Merge Goblin
+(once per version).
 
 **From source** — builds the app on your machine with the Xcode command line tools:
 
@@ -460,7 +464,7 @@ Renaming him is one file: `lib/brand.sh`.
    `APPLE_ID`, `APPLE_TEAM_ID` and `APPLE_APP_PASSWORD`. Locally,
    `xcrun notarytool store-credentials <name>` and `NOTARY_PROFILE=<name> scripts/notarize.sh`
    does the same.
-3. **Tap.** Create `Kiril-P/homebrew-tap` with a `Casks/` directory.
+3. **Tap.** `Kiril-P/homebrew-tap` (exists) holds `Casks/merge-goblin.rb`.
 
 Without the secrets the workflow still publishes, unsigned and un-notarised.
 
@@ -473,9 +477,9 @@ Without the secrets the workflow still publishes, unsigned and un-notarised.
    disagrees with `lib/brand.sh`.
 4. Check the release has `MergeGoblin-<version>.dmg`, `SHA256SUMS` and `merge-goblin.rb`.
    **Never publish one without `SHA256SUMS`**: the in-app updater refuses it.
-5. Copy `merge-goblin.rb` from the release into the tap as `Casks/merge-goblin.rb` and push.
-6. Download the DMG and run `shasum -a 256 -c SHA256SUMS`, `xcrun stapler validate` on it
-   and `spctl -a -vv -t open --context context:primary-signature` on it. Then install the
+5. `scripts/update-tap.sh` copies the release's `merge-goblin.rb` into the tap and pushes.
+6. Download the DMG and run `shasum -a 256 -c SHA256SUMS`; for a signed release also
+   `xcrun stapler validate` and `spctl -a -vv -t open --context context:primary-signature` on it. Then install the
    previous version and use **Install update** to make sure the update path works.
 
 The first Developer ID release is accepted by existing ad-hoc installs on its checksum alone.
