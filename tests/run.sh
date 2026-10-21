@@ -2151,6 +2151,7 @@ t "status: no emoji in the description"    test_commit_status_has_no_emoji
 t "fixed: only what the model says is fixed" test_fixed_prior_is_kept_and_prompted
 t "lock: a dead run's lock clears at once"  test_a_dead_runs_lock_is_cleared_at_once
 t "login: open at login checked and fixed"  test_open_at_login_is_checked_and_fixed
+t "help: prints, runs nothing"             test_help_runs_nothing
 
 printf '\n  %s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -gt 0 ] && { printf '  failed:%b\n\n' "$FAILED"; exit 1; }

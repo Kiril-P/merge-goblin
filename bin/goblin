@@ -58,7 +58,7 @@ $GOBLIN_EMOJI $GOBLIN_NAME v$GOBLIN_VERSION — $GOBLIN_TAGLINE
   goblin status [--json]              current state, stats and spend
   goblin doctor [--fix] [--json]      diagnose everything; --fix repairs the safe ones
   goblin review <ref> [--post]        review one PR (2456, owner/repo#2456 or a URL);
-          [--repo S] [--focus F]      waits in preview until you `goblin post` it
+          [--repo S] [--focus F]      waits in preview until you post it (goblin post)
   goblin post <job> | cancel <job>    publish a waiting review / stop or discard one
   goblin jobs [--json]                what has been asked for, newest first
   goblin run [--pr N] [--repo SLUG]   review now

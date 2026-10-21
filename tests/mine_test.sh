@@ -161,3 +161,11 @@ test_open_at_login_is_checked_and_fixed() {
   HOME="$realhome"; unset GOBLIN_APP_BUNDLE
   teardown
 }
+
+test_help_runs_nothing() {
+  # Backticks in the unquoted help heredoc were command substitution: `goblin help`
+  # ran `goblin post` and printed its usage error above the help.
+  local out; out="$(GOBLIN_HOME="$(mktemp -d)" "$ROOT/bin/goblin" help 2>&1)"
+  printf '%s' "$out" | grep -q '^usage: goblin post' && { echo "help ran another command"; return 1; }
+  printf '%s' "$out" | grep -q 'until you post it' || { echo "help text lost"; return 1; }
+}
