@@ -60,7 +60,7 @@ final class CommandTests: XCTestCase {
 
     func testEveryCaseBuildsAnArgvWithNoStrayFlags() throws {
         var all: [Command] = [
-            .power(on: true), .pause, .resume, .snooze(kind: .hour), .reviewNow, .dryRun,
+            .power(on: true), .pause, .resume, .dismissFailures, .snooze(kind: .hour), .reviewNow, .dryRun,
             .setMaxReviewsPerDay(5), .setMaxConcurrentJobs(2), .setManualReviewMode(.preview),
             .setVerdictMode(.comment), .setAllowApprove(false), .setProvider(.claude),
             .setProviderModel(provider: .claude, model: "sonnet"),

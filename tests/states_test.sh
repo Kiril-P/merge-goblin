@@ -212,5 +212,18 @@ test_pauses_say_how_much_and_until_when() {
   events_append failed 13 T u 0 transient acme/w cursor m
   eq error "$(_ui .bar.glyph)" || { _fin; return 1; }
   eq "#13: lost the connection to Cursor." "$(_ui .bar.problem.detail)" || { _fin; return 1; }
+  # dismissed: the icon and the banner calm down, and stuck PRs stay quiet too
+  local now; now="$(now_epoch)"
+  jq -n --argjson l "$((now - 100))" --argjson n "$((now + 3600))" \
+    '{"14:abc":{n:3,lastAt:$l,nextAt:$n,kind:"transient"}}' > "$(attempt_file)"
+  eq 1 "$(attempt_stuck_json | jq length)" || { _fin; return 1; }
+  . "$ROOT/lib/cmd_ctl.sh"; cmd_ctl dismiss-failures >/dev/null
+  eq idle "$(_ui .bar.glyph)" || { _fin; return 1; }
+  eq null "$(_ui .bar.problem)" || { _fin; return 1; }
+  eq 0 "$(attempt_stuck_json | jq length)" || { _fin; return 1; }
+  # anything that failed after the dismissal brings it back
+  cfg_set ".failuresDismissedAt = $((now - 10))"
+  eq error "$(_ui .bar.glyph)" || { _fin; return 1; }
+  eq failing "$(_ui .bar.problem.kind)" || { _fin; return 1; }
   _fin; teardown
 }

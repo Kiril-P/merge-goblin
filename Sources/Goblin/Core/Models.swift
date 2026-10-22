@@ -423,6 +423,10 @@ struct BarProblem: Equatable {
     let detail: String
     let action: Action
 
+    /// failing and stuck are past reviews: someone can say "seen it". The rest stay
+    /// until they are fixed.
+    var dismissable: Bool { kind == "failing" || kind == "stuck" }
+
     init?(json: JSON) {
         guard let t = json["title"].string, !t.isEmpty else { return nil }
         kind = json["kind"].string("")

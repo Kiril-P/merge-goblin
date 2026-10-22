@@ -2161,7 +2161,7 @@ t "quota: the provider rests, fallback used" test_a_usage_limit_rests_the_provid
 t "quota: run stops or falls back"         test_a_resting_provider_stops_or_falls_back
 t "quota: mid-review, the fallback steps in" test_a_usage_limit_mid_review_uses_the_fallback
 t "fail: says what happened and when"      test_a_failure_says_what_and_when
-t "pause: says how much and until when"    test_pauses_say_how_much_and_until_when
+t "pause: says how much and until when, dismissable" test_pauses_say_how_much_and_until_when
 
 printf '\n  %s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -gt 0 ] && { printf '  failed:%b\n\n' "$FAILED"; exit 1; }

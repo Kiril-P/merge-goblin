@@ -97,10 +97,14 @@ attempt_reason() {
 attempt_stuck_json() {
   local f; f="$(attempt_file)"
   [ -f "$f" ] || { printf '[]'; return 0; }
-  local maxa out; maxa="$(cfg_get '.failure.maxAttempts' 3)"
-  out="$(jq -c --argjson now "$(now_epoch)" --argjson maxa "${maxa:-3}" '
+  local maxa dis out; maxa="$(cfg_get '.failure.maxAttempts' 3)"
+  # still retried on schedule, but no longer shouted about once dismissed; a fresh
+  # failure (a later lastAt) shows it again
+  dis="$(cfg_get '.failuresDismissedAt' 0)"; case "$dis" in ''|*[!0-9]*) dis=0 ;; esac
+  out="$(jq -c --argjson now "$(now_epoch)" --argjson maxa "${maxa:-3}" --argjson dis "$dis" '
     [ to_entries[]
       | select((.value.n // 0) >= $maxa)
+      | select((.value.lastAt // 0) > $dis)
       | select((.value.nextAt // 0) > $now)
       | { number: ((.key | split(":") | .[0] | tonumber?) // 0),
           head:   ((.key | split(":") | .[1]) // ""),
