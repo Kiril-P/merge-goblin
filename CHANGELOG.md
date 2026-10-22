@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.2
 
 When something goes wrong, the Goblin now says what happened, when it tries again,
 and what fixes it.
@@ -35,6 +35,7 @@ and what fixes it.
   unsend a review, so this is the only real undo). After a discard there is a
   **Review again** button, and "Posted to GitHub." links to the review.
 - Fixed: reviews made in preview showed "failed" in Recent.
+- Fixed: `goblin help` ran `goblin post` (backticks in its text).
 
 ## 0.5.1
 
