@@ -227,3 +227,15 @@ test_pauses_say_how_much_and_until_when() {
   eq failing "$(_ui .bar.problem.kind)" || { _fin; return 1; }
   _fin; teardown
 }
+
+test_a_timeout_is_called_a_timeout() {
+  setup
+  local rc=0
+  run_with_timeout 1 sleep 30 </dev/null || rc=$?
+  eq 124 "$rc" || return 1
+  rc=0; run_with_timeout 5 sh -c 'exit 3' </dev/null || rc=$?
+  eq 3 "$rc" || return 1
+  rc=0; run_with_timeout 5 true </dev/null || rc=$?
+  eq 0 "$rc" || return 1
+  teardown
+}

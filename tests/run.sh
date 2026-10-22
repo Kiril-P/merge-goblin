@@ -2162,6 +2162,7 @@ t "quota: run stops or falls back"         test_a_resting_provider_stops_or_fall
 t "quota: mid-review, the fallback steps in" test_a_usage_limit_mid_review_uses_the_fallback
 t "fail: says what happened and when"      test_a_failure_says_what_and_when
 t "pause: says how much and until when, dismissable" test_pauses_say_how_much_and_until_when
+t "fail: a timeout is called a timeout"     test_a_timeout_is_called_a_timeout
 
 printf '\n  %s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -gt 0 ] && { printf '  failed:%b\n\n' "$FAILED"; exit 1; }

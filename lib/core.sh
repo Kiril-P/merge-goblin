@@ -91,6 +91,7 @@ run_with_timeout() {
   # `<&0` is load-bearing: POSIX says an asynchronous command's stdin is assigned
   # to /dev/null unless explicitly redirected, which would silently swallow a
   # prompt the caller piped in. This passes the caller's stdin through.
+  local t0=$SECONDS
   "$@" <&0 &
   local child=$!
   (
@@ -112,6 +113,10 @@ run_with_timeout() {
   if kill -0 "$watcher" 2>/dev/null; then
     kill "$watcher" 2>/dev/null
     wait "$watcher" 2>/dev/null || true
+    # The watcher is still alive during its 5s grace after the TERM, so a child the
+    # TERM did stop lands here too, as 143. That is a timeout: it used to be reported
+    # as "stopped with an error", and no timeout was ever recorded.
+    [ "$rc" -ne 0 ] && [ $((SECONDS - t0)) -ge "$secs" ] && rc=124
   else
     [ "$rc" -ne 0 ] && rc=124
   fi
