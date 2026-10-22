@@ -29,6 +29,9 @@ struct PopoverView: View {
                     if !store.snapshot.setupComplete && store.snapshot.loaded {
                         setupBanner
                     } else {
+                        if let p = store.snapshot.problem, store.snapshot.enabled {
+                            ProblemBanner(problem: p, store: store).transition(Motion.row)
+                        }
                         ReviewField(input: input, store: store, onStarted: { _ in })
                     }
                     if !store.liveJobs.isEmpty { liveSection.transition(Motion.row) }
@@ -89,6 +92,7 @@ struct PopoverView: View {
         let s = store.snapshot
         if !s.enabled || !s.setupComplete { return .gray }
         if s.jobsActive > 0 || s.state == "reviewing" { return Color(nsColor: .systemBlue) }
+        if s.problem != nil { return Color(nsColor: .systemOrange) }
         if s.snoozeUntil != nil || s.state == "paused" { return Color(nsColor: .systemYellow) }
         return Theme.accent
     }
@@ -146,6 +150,7 @@ struct PopoverView: View {
                         .arrive(Double(i) * 0.035)
                     }
                 }
+                LastCheckLine(store: store)
             case .recent:
                 let items = store.recent
                 if items.isEmpty {
@@ -309,16 +314,83 @@ struct StatePill: View {
         if !s.enabled { return "off" }
         if s.snoozeUntil != nil { return "snoozed" }
         if s.jobsActive > 0 || s.state == "reviewing" { return "reviewing" }
-        if s.state == "paused" { return s.pausedReason == "quota" ? "daily cap" : "paused" }
+        // the icon says something is wrong: the pill must not say "on duty"
+        if s.problem != nil { return "needs you" }
+        if s.state == "paused" {
+            switch s.pausedReason {
+            case "quota": return "daily limit"
+            case "budget": return "budget spent"
+            case "provider_quota": return "AI limit"
+            default: return "paused"
+            }
+        }
         return "on duty"
     }
     private var color: Color {
         let s = store.snapshot
         if !s.setupComplete || !s.identityOK { return Color(nsColor: .systemOrange) }
+        if s.enabled && s.snoozeUntil == nil && s.problem != nil && !busy { return Color(nsColor: .systemOrange) }
         if !s.enabled { return .secondary }
         if s.snoozeUntil != nil || s.state == "paused" { return Color(nsColor: .systemYellow) }
         if s.jobsActive > 0 || s.state == "reviewing" { return Color(nsColor: .systemBlue) }
         return Theme.accent
+    }
+}
+
+/// What is wrong when the menu bar icon says so, and the one thing that fixes it.
+struct ProblemBanner: View {
+    let problem: BarProblem
+    let store: AppStore
+    var body: some View {
+        Card(padding: 12, accent: Color(nsColor: .systemOrange)) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(Color(nsColor: .systemOrange)).font(.system(size: 14, weight: .semibold))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(problem.title).font(.system(size: 13, weight: .semibold))
+                    if !problem.detail.isEmpty {
+                        Text(problem.detail).font(.system(size: 12)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    HStack {
+                        switch problem.action {
+                        case .account:
+                            Button("Fix the account") { WindowManager.shared.showSettings(.general) }.buttonStyle(.goblinPrimarySmall)
+                        case .health:
+                            Button("Open Health") { WindowManager.shared.showSettings(.health) }.buttonStyle(.goblinPrimarySmall)
+                        case .log:
+                            Button("Open the log") { store.openLog() }.buttonStyle(.goblinSmall)
+                        }
+                    }
+                    .padding(.top, 2)
+                }
+                Spacer(minLength: 0)
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+}
+
+/// "Checked 3m ago · next look around 12:25": the Goblin is alive even when there is
+/// nothing to show. An empty list with no sign of life reads as a broken one.
+struct LastCheckLine: View {
+    let store: AppStore
+    var body: some View {
+        let s = store.snapshot
+        if s.enabled, s.setupComplete, s.snoozeUntil == nil, s.state != "paused", !s.repos.isEmpty,
+           let last = s.lastRunFinished {
+            TimelineView(.periodic(from: .now, by: 30)) { ctx in
+                Text(text(last: last, next: s.nextRunEstimate, now: ctx.date))
+                    .font(.system(size: 11)).foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.top, 2)
+            }
+        }
+    }
+    private func text(last: Date, next: Date?, now: Date) -> String {
+        var t = "Checked \(Ago.short(last, now: now))"
+        if let next, next > now { t += " · next look around \(next.formatted(date: .omitted, time: .shortened))" }
+        return t
     }
 }
 

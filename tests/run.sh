@@ -1912,6 +1912,8 @@ test_panel_contract_matches_the_app() {
       manual-mode)     cmd_panel set "$k" preview   >/dev/null 2>&1 || bad="$bad $k" ;;
       auto-post)       cmd_panel set "$k" safe      >/dev/null 2>&1 || bad="$bad $k" ;;
       review-mine)     cmd_panel set "$k" hold      >/dev/null 2>&1 || bad="$bad $k" ;;
+      provider-fallback) cmd_panel set "$k" codex   >/dev/null 2>&1 || bad="$bad $k"
+                       cmd_panel set "$k" none      >/dev/null 2>&1 || bad="$bad $k:none" ;;
       last-repo)       cmd_panel set "$k" acme/widgets >/dev/null 2>&1 || bad="$bad $k" ;;
       verdict-mode)    cmd_panel set "$k" comment   >/dev/null 2>&1 || bad="$bad $k" ;;
       provider-model)  cmd_panel set "$k" claude sonnet >/dev/null 2>&1 || bad="$bad $k" ;;
@@ -2152,6 +2154,14 @@ t "fixed: only what the model says is fixed" test_fixed_prior_is_kept_and_prompt
 t "lock: a dead run's lock clears at once"  test_a_dead_runs_lock_is_cleared_at_once
 t "login: open at login checked and fixed"  test_open_at_login_is_checked_and_fixed
 t "help: prints, runs nothing"             test_help_runs_nothing
+
+. "$ROOT/tests/states_test.sh"
+t "fail: classified, never just \"other\""    test_failures_are_classified_not_other
+t "quota: the provider rests, fallback used" test_a_usage_limit_rests_the_provider
+t "quota: run stops or falls back"         test_a_resting_provider_stops_or_falls_back
+t "quota: mid-review, the fallback steps in" test_a_usage_limit_mid_review_uses_the_fallback
+t "fail: says what happened and when"      test_a_failure_says_what_and_when
+t "pause: says how much and until when"    test_pauses_say_how_much_and_until_when
 
 printf '\n  %s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -gt 0 ] && { printf '  failed:%b\n\n' "$FAILED"; exit 1; }

@@ -34,6 +34,33 @@ GOBLIN_MARKER_NS_LEGACY="bob"
 # Severity vocabulary. The order here IS the display/sort order.
 GOBLIN_SEVERITIES="blocker convention risk nit question"
 
+provider_display() {
+  case "$1" in
+    claude) printf 'Claude' ;;
+    codex)  printf 'Codex' ;;
+    cursor) printf 'Cursor' ;;
+    "")     printf 'the AI' ;;
+    *)      printf '%s' "$1" ;;
+  esac
+}
+
+# failure_words <kind> <provider> — what went wrong, in words, for notifications,
+# the commit status and the job. Never a bare code like "other".
+failure_words() {
+  local p; p="$(provider_display "${2:-}")"
+  case "$1" in
+    quota)      printf '%s hit its usage limit' "$p" ;;
+    auth|provider_auth) printf '%s is signed out' "$p" ;;
+    transient)  printf 'lost the connection to %s' "$p" ;;
+    timeout)    printf '%s took too long and was stopped' "$p" ;;
+    bad_output) printf "%s's answer could not be read" "$p" ;;
+    payload|"payload incomplete") printf 'the review could not be put together' ;;
+    post|"post failed")           printf "GitHub didn't accept the review" ;;
+    no_files)   printf 'GitHub returned no changed files' ;;
+    *)          printf '%s stopped with an error' "$p" ;;
+  esac
+}
+
 goblin_severity_label() {
   case "$1" in
     blocker)    printf '%s' "🔴 blocker" ;;

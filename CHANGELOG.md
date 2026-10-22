@@ -1,5 +1,41 @@
 # Changelog
 
+## Unreleased
+
+When something goes wrong, the Goblin now says what happened, when it tries again,
+and what fixes it.
+
+- **Failures in words.** Most failed reviews used to be filed as `other`: the
+  notification read "#123 — other" and the review window showed the AI CLI's raw
+  output. Dropped connections, usage limits and sign-outs are now recognised, the
+  message says what happened ("Lost the connection to Cursor. The Goblin tries again
+  around 14:20."), and the CLI's own words sit behind a "What Cursor said" toggle.
+- **The failure screen offers the fix.** Out of quota: review it with another AI
+  you're signed in to, or set a backup. Signed out: open Reviewer settings. Wrong
+  GitHub account: open account settings. Anything else: try again.
+- **Our failures no longer turn a teammate's PR red.** A scheduled review that fails
+  leaves its check pending with the time it retries, instead of a red error.
+  Fixed: a failed *preview* posted a red "review failed" status on GitHub, although a
+  preview is meant to leave GitHub alone.
+- **Usage limits.** A provider that hits its limit rests until it resets (the time
+  the CLI gives, else an hour) instead of failing every PR in turn and marking each
+  one stuck. `providerFallback` now does what the README always said: with a backup
+  set (Settings → Reviewer → Backup), the same PR is reviewed by it straight away.
+  Without one, the Goblin pauses and says when it resumes.
+- **The icon and the panel agree.** When the menu bar icon says something is wrong,
+  the panel shows what it is and a button that fixes it, and the pill says "needs
+  you", not "on duty".
+- **Limits with numbers.** "daily review limit reached · 20 of 20 today · resumes at
+  midnight", "daily budget spent · $10 of $10", "snoozed until 15:40", "Claude hit its
+  usage limit · trying again at 16:05". `goblin budget` says "daily budget", which is
+  what it is.
+- **Signs of life.** Waiting for you shows when the Goblin last looked and when it
+  looks next.
+- **Undo.** Post and Discard wait five seconds with an Undo button (GitHub can't
+  unsend a review, so this is the only real undo). After a discard there is a
+  **Review again** button, and "Posted to GitHub." links to the review.
+- Fixed: reviews made in preview showed "failed" in Recent.
+
 ## 0.5.1
 
 - **Pick the repo before you type.** The review field starts with the repo a number

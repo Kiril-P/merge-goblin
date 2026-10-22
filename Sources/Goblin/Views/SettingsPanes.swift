@@ -190,6 +190,7 @@ struct ReviewerPane: View {
                     VStack(spacing: 12) {
                         ForEach(store.providers) { ProviderCard(store: store, provider: $0) }
                     }
+                    BackupProviderGroup(store: store)
                 }
             }
             HStack(spacing: 10) {
@@ -210,6 +211,40 @@ struct ReviewerPane: View {
             }
         }
         .task { if store.providersState == .idle { await store.refreshProviders() } }
+    }
+}
+
+/// Who reviews while the main AI is at its usage limit. Without one, the Goblin pauses
+/// until the limit resets and says when that is.
+private struct BackupProviderGroup: View {
+    let store: AppStore
+    private var current: String { store.snapshot.providerId }
+    private var saved: String { store.snapshot.settings.providerFallback }
+    private var candidates: [ProviderInfo] { store.providers.filter { $0.name != current } }
+
+    var body: some View {
+        SettingsGroup(title: "When \(ProviderInfo.displayName(current)) hits its usage limit",
+                      footer: "Reviews switch to the backup until the limit resets, then switch back.") {
+            SettingRow(title: "Backup", hint: hint, last: true) {
+                Picker("", selection: Binding(
+                    get: { saved == current ? "" : saved },
+                    set: { new in Task { await store.perform(.setProviderFallback(ProviderId(rawValue: new))) } })) {
+                    Text("None, wait for it").tag("")
+                    ForEach(candidates) { p in
+                        Text(p.ready ? p.displayName : "\(p.displayName) (not signed in)").tag(p.name)
+                    }
+                }
+                .labelsHidden().fixedSize()
+            }
+        }
+    }
+
+    private var hint: String {
+        if saved.isEmpty || saved == current { return "The Goblin pauses until the limit resets, and says when." }
+        if let p = store.providers.first(where: { $0.name == saved }), !p.ready {
+            return "\(p.displayName) is not signed in, so it can't step in yet."
+        }
+        return "\(ProviderInfo.displayName(saved)) reviews meanwhile."
     }
 }
 
@@ -729,7 +764,7 @@ struct NotificationsPane: View {
                         value: s.notifyPosted, command: { .setFlag(key: .notifyPosted, on: $0) })
                 FlagRow(store: store, title: "A review fails",
                         value: s.notifyFailed, command: { .setFlag(key: .notifyFailed, on: $0) })
-                FlagRow(store: store, title: "He hits the daily cap",
+                FlagRow(store: store, title: "He runs out of daily budget",
                         value: s.notifyBudget, last: true, command: { .setFlag(key: .notifyBudget, on: $0) })
             }
             SettingsGroup {

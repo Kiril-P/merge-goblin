@@ -104,6 +104,13 @@ _panel_set() {
       # The repo a bare PR number means (the switcher in front of the review field).
       out="$(_panel_slug "$v")" || { echo "repo must be owner/name" >&2; return 2; }
       cfg_set --arg r "$out" '.lastRepo = $r' ;;
+    provider-fallback)
+      # Who reviews while the main provider is at its usage limit. One backup, or none.
+      case "$v" in
+        none|"") cfg_set '.providerFallback = []' ;;
+        claude|codex|cursor) cfg_set --arg p "$v" '.providerFallback = [$p]' ;;
+        *) echo "the backup provider must be claude, codex, cursor or none" >&2; return 2 ;;
+      esac ;;
     review-mine)
       case "$v" in
         off|hold|post) cfg_set --arg m "$v" '.reviewMine = $m' ;;

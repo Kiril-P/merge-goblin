@@ -104,13 +104,14 @@ provider_claude_review() {
     GOBLIN_P_ERRKIND=timeout; GOBLIN_P_ERRMSG="timed out after ${to}s"; return 124
   fi
   if [ "$rc" != "0" ]; then
-    GOBLIN_P_ERRKIND="$(provider_classify_error "$(cat "$raw/stderr.txt" 2>/dev/null)")"
-    GOBLIN_P_ERRMSG="$(head -c 300 "$raw/stderr.txt" 2>/dev/null)"
+    GOBLIN_P_ERRKIND="$(provider_classify_error "$(provider_error_text "$raw")")"
+    GOBLIN_P_ERRMSG="$(provider_error_line "$raw")"
     return 1
   fi
   if [ "$(jq -r '.is_error // false' "$raw/stdout.json" 2>/dev/null)" = "true" ]; then
-    GOBLIN_P_ERRKIND=other
     GOBLIN_P_ERRMSG="$(jq -r '.result // "model reported an error"' "$raw/stdout.json" 2>/dev/null | head -c 300)"
+    # A usage limit arrives here, as a result with is_error set and a clean exit.
+    GOBLIN_P_ERRKIND="$(provider_classify_error "$GOBLIN_P_ERRMSG")"
     return 1
   fi
 

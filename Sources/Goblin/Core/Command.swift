@@ -195,6 +195,7 @@ enum Command: Equatable {
     // provider
     case setProvider(ProviderId)
     case setProviderModel(provider: ProviderId, model: String)   // ^[A-Za-z0-9._:-]{0,64}$
+    case setProviderFallback(ProviderId?)   // who reviews while the main one is at its limit
 
     // repos
     case repoAdd(slug: String)
@@ -317,6 +318,8 @@ enum Command: Equatable {
             return Command.panelSet("auto-post", p.rawValue)
         case .setReviewMine(let m):
             return Command.panelSet("review-mine", m.rawValue)
+        case .setProviderFallback(let p):
+            return Command.panelSet("provider-fallback", p?.rawValue ?? "none")
         case .setLastRepo(let slug):
             return Command.panelSet("last-repo", slug)
 

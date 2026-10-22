@@ -68,7 +68,12 @@ enum Snapshotter {
                 (name: "convention", tally: .init(n: 11, addressed: 5, discussed: 2, silent: 4)),
                 (name: "nit", tally: .init(n: 7, addressed: 2, discussed: 1, silent: 4)),
             ]),
-            fleet: demoFleet(store))
+            fleet: demoFleet(store),
+            providers: [
+                #"{"name":"claude","available":true,"authed":true,"authMode":"subscription","version":"2.4.1","model":"sonnet","costKnown":true,"current":true}"#,
+                #"{"name":"codex","available":true,"authed":true,"authMode":"chatgpt","version":"0.98.0","model":"","costKnown":false}"#,
+                #"{"name":"cursor","available":true,"authed":false,"authMode":"","version":"2026.10","model":"","costKnown":false,"note":"not signed in"}"#,
+            ].map { ProviderInfo(json: JSON.parse($0)) })
         store.repoSearchOverride = { _ in [
             RepoResult(slug: "acme/billing-api", description: "Invoices, plans and proration", isPrivate: true, permission: "ADMIN", watched: true),
             RepoResult(slug: "acme/web-app", description: "The customer dashboard", isPrivate: true, permission: "WRITE", watched: false),

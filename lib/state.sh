@@ -49,7 +49,7 @@ compute_stats() {
                         | select(((.number // 0) == ($f.number // 0))
                                  and ((.repo // "") == ($f.repo // ""))
                                  and ((.at // 0) > ($f.at // 0))) ] | length) == 0)
-            | {number:(.number//0), reason:(.reason//""), at:(.at//0)} ]
+            | {number:(.number//0), reason:(.reason//""), at:(.at//0), provider:(.provider//"")} ]
         | reverse | .[0:3]
       )
     }' 2>/dev/null)"
@@ -186,7 +186,7 @@ ui_state_write() {
         verdictMode, allowApprove, budgetCapUsd, maxReviewsPerDay, maxReviewsPerRun,
         maxFindings, intervalSeconds, timeoutSecs, maxDiffBytes, incrementalReview,
         postCommitStatus, postIntentComment, fleetAssignment, skipIfHumanReviewed, refutePass, autoPost, reviewMine, reviewMineDrafts,
-        manualReviewMode, maxConcurrentJobs, lastRepo,
+        manualReviewMode, maxConcurrentJobs, lastRepo, providerFallback,
         notify,
         skip: {bots: (.skip.bots != false), docsOnly: (.skip.docsOnly == true)},
         providers: (.providers | with_entries(.value |= {model}))
@@ -194,7 +194,9 @@ ui_state_write() {
     --argjson running "$running" --argjson disabled "$disabled" \
     --argjson installed "$installed" \
     --argjson update "$update" \
-    --argjson checkedAt "$now" '
+    --argjson checkedAt "$now" \
+    --argjson doneToday "$(today_review_count)" \
+    --argjson spentToday "$(today_spend)" '
     . + $stats + {
       goblin: {name: $name, version: $version},
       update: {
@@ -246,6 +248,25 @@ ui_state_write() {
     | (($s.recentFailures // []) | length >= 2) as $failing
     | (($s.stuck // []) | length > 0) as $anystuck
     | ($idbad or ($dfail > 0) or $notloaded or $failing or $anystuck) as $err
+    # Times are local and spelled out: "resumes at midnight", "until 15:40". A pause
+    # without its end is the "You have used all your sessions" screen with no date on it
+    | def hm: strflocaltime("%H:%M");
+      def day: strflocaltime("%Y-%m-%d");
+      def when: if (. | day) == ($checkedAt | day) then "at \(hm)" else "tomorrow at \(hm)" end;
+      def pname: {"claude":"Claude","codex":"Codex","cursor":"Cursor"}[.] // (if . == "" then "the AI" else . end);
+      # the same words as failure_words in lib/brand.sh
+      def words(p): if . == "quota" then "\(p | pname) hit its usage limit"
+        elif . == "auth" or . == "provider_auth" then "\(p | pname) is signed out"
+        elif . == "transient" then "lost the connection to \(p | pname)"
+        elif . == "timeout" then "\(p | pname) took too long"
+        elif . == "bad_output" then "\(p | pname)\u0027s answer could not be read"
+        elif . == "payload" then "the review could not be put together"
+        elif . == "post" or . == "post failed" then "GitHub didn\u0027t accept the review"
+        elif . == "no_files" then "GitHub returned no changed files"
+        else "\(p | pname) stopped with an error" end;
+      def prs(n): if n == 1 then "1 PR" else "\(n) PRs" end;
+      ($s.settings.maxReviewsPerDay // 0) as $maxDay
+    | ($s.recentFailures // []) as $fails
     | .bar = {
         glyph: (
           if ($s.setup.complete | not) then "error"
@@ -253,7 +274,7 @@ ui_state_write() {
           elif ($s.state == "reviewing" or ($s.jobs.active // 0) > 0) then "reviewing"
           elif $err then "error"
           elif $s.state == "snoozed" then "snoozed"
-          elif $s.pausedReason == "quota" then "quota"
+          elif ($s.pausedReason == "quota" or $s.pausedReason == "provider_quota") then "quota"
           elif $s.state == "paused" then "paused"
           else "idle" end),
         count: ($s.inbox.waiting // 0),
@@ -265,12 +286,39 @@ ui_state_write() {
           elif $idbad then "wrong GitHub account"
           elif $notloaded then "scheduler is not loaded"
           elif ($dfail > 0) then "\($dfail) health check(s) failing"
-          elif $anystuck then "\($s.stuck | length) PR(s) stuck"
+          elif $anystuck then "\(prs($s.stuck | length)) stuck · next try \($s.stuck | map(.nextAt) | min | when)"
           elif $failing then "recent reviews are failing"
-          elif $s.state == "snoozed" then "snoozed"
-          elif $s.pausedReason == "quota" then "daily cap reached"
+          elif $s.state == "snoozed" or (($s.snoozeUntil // 0) > $checkedAt) then
+            (if ($s.snoozeUntil // 0) > $checkedAt then "snoozed until \($s.snoozeUntil | hm)" else "snoozed" end)
+          elif $s.pausedReason == "provider_quota" then
+            "\($s.pausedProvider // "" | pname) hit its usage limit · trying again \(($s.resumeAt // $checkedAt) | when)"
+          elif $s.pausedReason == "quota" then
+            "daily review limit reached · \($doneToday) of \($maxDay) today · resumes at midnight"
+          elif $s.pausedReason == "budget" then
+            "daily budget spent · $\($spentToday * 100 | round / 100) of $\($s.budgetCapUsd // 0) · resumes at midnight"
           elif $s.state == "paused" then "paused"
-          else "idle — \($s.inbox.waiting // 0) waiting" end)
+          else "idle — \($s.inbox.waiting // 0) waiting" end),
+        # What is wrong and what fixes it, for the panel to show as a banner whenever
+        # the icon says "error". The icon used to go red while the pill in the panel still
+        # said "on duty": two screens disagreeing about whether anything was wrong.
+        problem: (
+          if ($s.setup.complete | not) then null
+          elif ($s.agent.disabled or ($s.enabled | not)) then null
+          elif $idbad then {kind: "account", title: "GitHub is signed in as the wrong account",
+              detail: "gh is using @\($s.identity.ghActive), but the Goblin posts as @\($s.identity.login). Nothing is reviewed until they match.",
+              action: "account"}
+          elif $notloaded then {kind: "scheduler", title: "The schedule isn\u0027t running",
+              detail: "Nothing gets reviewed on its own until it\u0027s loaded again.", action: "health"}
+          elif ($dfail > 0) then {kind: "health", title: "\(if $dfail == 1 then "A health check is" else "\($dfail) health checks are" end) failing",
+              detail: "The Health pane says which, and fixes what it can.", action: "health"}
+          elif $anystuck then ($s.stuck | sort_by(.nextAt) | .[0]) as $x
+            | {kind: "stuck", title: "\(prs($s.stuck | length)) keep failing",
+               detail: "#\($x.number): \($x.kind | words($s.provider.id // "")). The Goblin tries again \($x.nextAt | when).",
+               action: "log"}
+          elif $failing then {kind: "failing", title: "Recent reviews are failing",
+              detail: "#\($fails[0].number): \($fails[0].reason | words($fails[0].provider // "")).",
+              action: "log"}
+          else null end)
       }' 2>/dev/null | atomic_write "$UISTATE" || true
   GOBLIN_CFG_OVERLAY="$_overlay"
 }
