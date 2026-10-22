@@ -269,6 +269,10 @@ struct ToastHost: ViewModifier {
                         .foregroundStyle(t.kind == .error ? Color(nsColor: .systemRed) : t.kind == .success ? Theme.accent : .secondary)
                         .symbolEffect(.bounce, options: .nonRepeating, value: Motion.reduced ? 0 : t.id.hashValue)
                     Text(t.text).font(.system(size: 12.5)).lineLimit(3)
+                    if let a = t.action {
+                        Button(a.title) { store.dismissToast(); a.run() }
+                            .buttonStyle(.goblinSmall)
+                    }
                 }
                 .padding(.horizontal, 12).padding(.vertical, 9)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))

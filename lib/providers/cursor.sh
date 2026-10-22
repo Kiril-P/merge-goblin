@@ -66,8 +66,8 @@ provider_cursor_review() {
 
   if [ "$rc" = "124" ]; then GOBLIN_P_ERRKIND=timeout; GOBLIN_P_ERRMSG="timed out after ${to}s"; return 124; fi
   if [ "$rc" != "0" ]; then
-    GOBLIN_P_ERRKIND="$(provider_classify_error "$(cat "$raw/stderr.txt" 2>/dev/null)")"
-    GOBLIN_P_ERRMSG="$(head -c 300 "$raw/stderr.txt" 2>/dev/null)"
+    GOBLIN_P_ERRKIND="$(provider_classify_error "$(provider_error_text "$raw")")"
+    GOBLIN_P_ERRMSG="$(provider_error_line "$raw")"
     return 1
   fi
 

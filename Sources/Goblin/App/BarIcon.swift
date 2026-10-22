@@ -46,7 +46,7 @@ enum BarGlyph: String, CaseIterable {
         case .idle:      return "idle"
         case .reviewing: return "reviewing now"
         case .paused:    return "paused"
-        case .quota, .budget: return "stopped, daily cap reached"
+        case .quota, .budget: return "paused until a daily limit resets"
         case .snoozed:   return "snoozed"
         case .off:       return "turned off"
         case .error:     return "needs attention"

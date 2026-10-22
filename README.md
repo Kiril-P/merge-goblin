@@ -296,7 +296,8 @@ the review body and aren't counted.
 | key | default | |
 |---|---|---|
 | `provider` | `claude` | `claude` · `codex` · `cursor` |
-| `providerFallback` | `[]` | try these if the main one is out of quota |
+| `providerFallback` | `[]` | who reviews while the main provider is at its usage limit (Settings → Reviewer → Backup). Empty: the Goblin pauses until the limit resets and says when |
+| `failure.quotaCooldownSecs` | `3600` | how long a provider rests after a usage limit, when its CLI doesn't say when it resets |
 | `verdictMode` | `comment` | `comment` · `request-changes` · `full` |
 | `allowApprove` | `false` | second opt-in required before he can ever approve |
 | `budgetCapUsd` | `10` | 0 = unlimited |

@@ -21,9 +21,25 @@ enum LoadState: Equatable {
 
 struct Toast: Identifiable, Equatable {
     enum Kind { case info, success, error }
+    /// One button on the toast: "Undo", "View on GitHub".
+    struct Action {
+        let title: String
+        let run: @MainActor () -> Void
+    }
     let id = UUID()
     let kind: Kind
     let text: String
+    var action: Action? = nil
+    static func == (a: Toast, b: Toast) -> Bool { a.id == b.id }
+}
+
+/// A post or discard that waits a few seconds before it happens, so it can be taken
+/// back. GitHub cannot unsend a review: the only real undo is not having sent it yet.
+struct PendingSend: Equatable {
+    enum Kind { case post, discard }
+    let kind: Kind
+    let at: Date          // when it goes through
+    let token = UUID()
 }
 
 /// What `goblin resolve` said about a ref.
@@ -108,6 +124,9 @@ final class AppStore {
     /// Jobs with a post in flight from this window. The engine only reports `posting`
     /// once it has started, and a second click before that must not start a second post.
     var postingJobs: Set<String> = []
+    /// Posts and discards waiting out their undo window, by job id.
+    private(set) var pendingSends: [String: PendingSend] = [:]
+    static let undoSeconds: Double = 5
 
     var cliConfigured: Bool { CLI.shared.isConfigured }
     var home: String { CLI.shared.home }
@@ -367,13 +386,51 @@ final class AppStore {
 
     // MARK: toasts
 
-    func say(_ text: String, _ kind: Toast.Kind = .info) {
-        let t = Toast(kind: kind, text: text)
+    func say(_ text: String, _ kind: Toast.Kind = .info, action: Toast.Action? = nil, seconds: Double? = nil) {
+        let t = Toast(kind: kind, text: text, action: action)
         toast = t
         let id = t.id
+        // a toast with a button stays long enough to reach it
+        let wait = seconds ?? (kind == .error ? 6 : action != nil ? 6 : 3)
         Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: kind == .error ? 6_000_000_000 : 3_000_000_000)
+            try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
             if self?.toast?.id == id { self?.toast = nil }
+        }
+    }
+
+    func dismissToast() { toast = nil }
+
+    // MARK: undo window
+
+    /// Post after a few seconds, with Undo on the way. Everything in the app that posts
+    /// a review goes through here, except a banner's Post button, which has nowhere to
+    /// show an Undo and was already a deliberate second step.
+    func schedulePost(_ job: Job) { schedule(.post, job) }
+
+    /// Discard after a few seconds, with Undo. Replaces "are you sure?": undo is the
+    /// kinder way to stop a slip, and it does not interrupt the person who meant it.
+    func scheduleDiscard(_ job: Job) { schedule(.discard, job) }
+
+    func undoPending(_ jobID: String) {
+        guard let p = pendingSends.removeValue(forKey: jobID) else { return }
+        say(p.kind == .post ? "Not posted. The review is still here." : "Kept. Nothing was discarded.", .info)
+    }
+
+    private func schedule(_ kind: PendingSend.Kind, _ job: Job) {
+        guard pendingSends[job.id] == nil, !postingJobs.contains(job.id) else { return }
+        let p = PendingSend(kind: kind, at: Date().addingTimeInterval(Self.undoSeconds))
+        pendingSends[job.id] = p
+        let id = job.id
+        say(kind == .post ? "Posting #\(job.number) to GitHub…" : "Discarding the review of #\(job.number)…",
+            .info, action: Toast.Action(title: "Undo") { [weak self] in self?.undoPending(id) },
+            seconds: Self.undoSeconds)
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(Self.undoSeconds * 1_000_000_000))
+            guard let self, self.pendingSends[id]?.token == p.token else { return }   // undone
+            self.pendingSends[id] = nil
+            // the job as it is NOW: it may have been discarded or posted elsewhere meanwhile
+            guard let current = self.job(id), current.phase == .ready || (kind == .post && current.phase == .failed) else { return }
+            if kind == .post { await self.post(current) } else { self.cancel(current) }
         }
     }
 
@@ -582,8 +639,13 @@ final class AppStore {
             _ = try await CLI.shared.run(.postReview(job: job.id))
             edits[job.id] = nil
             reload()
-            say("Posted to GitHub.", .success)
-            return self.job(job.id)?.phase != .failed
+            let after = self.job(job.id)
+            if let url = after?.reviewURL, !url.isEmpty {
+                say("Posted to GitHub.", .success, action: Toast.Action(title: "View") { [weak self] in self?.openURL(url) })
+            } else {
+                say("Posted to GitHub.", .success)
+            }
+            return after?.phase != .failed
         } catch {
             reload()
             say((error as? LocalizedError)?.errorDescription ?? "Posting failed.", .error)
@@ -612,8 +674,9 @@ final class AppStore {
 
     /// Fixed data for the screenshot run, so it never depends on the machine it runs on.
     func seedForSnapshot(doctor checks: [DoctorCheck], accounts accs: [(login: String, active: Bool, configured: Bool)],
-                         stats seeded: ReviewStats? = nil, fleet: FleetStatus? = nil) {
+                         stats seeded: ReviewStats? = nil, fleet: FleetStatus? = nil, providers seededProviders: [ProviderInfo] = []) {
         if let seeded { stats = seeded; statsReadAt = Date(); statsState = .loaded }
+        if !seededProviders.isEmpty { providers = seededProviders; providersState = .loaded }
         if let fleet { fleetStatus = fleet; fleetReadAt = Date(); fleetState = .loaded }
         doctor = checks
         doctorState = .loaded

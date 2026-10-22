@@ -89,7 +89,8 @@ cat > "$DIR/jobs/$READY/preview/review.json" <<'JSON'
 JSON
 echo '{"slug":"acme/billing-api","pr":873,"head":"9f3c2a1d0e","base":"main","title":"x","url":"u","provider":"claude","model":"sonnet","costUsd":0.38}' > "$DIR/jobs/$READY/preview/meta.json"
 
-mkjob "j$((NOW-7200))-33333" acme/widgets 2452 "Bump the image pipeline to Node 22" failed $((NOW-7200)) '{"pid":1,"error":"timeout","errorDetail":"timed out after 900s"}'
+mkjob "j$((NOW-7200))-33333" acme/widgets 2452 "Bump the image pipeline to Node 22" failed $((NOW-7200)) \
+  '{"pid":1,"error":"transient","errorDetail":"Lost the connection to Claude. The Goblin tries again around 15:40.","errorRaw":"API Error: Connection error (ECONNRESET). Retrying in 8s… (attempt 6/6)","errorProvider":"claude"}'
 mkjob "j$((NOW-3500))-44444" acme/widgets 2455 "Cache the feature-flag lookup per request" done $((NOW-3500)) \
   '{"pid":1,"result":{"counts":"🟡 1 risk · ⚪ 1 nit","findings":2,"reviewUrl":"https://github.com/acme/widgets/pull/2455#pullrequestreview-1","costUsd":0.27}}'
 

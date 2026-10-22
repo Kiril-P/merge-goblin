@@ -103,16 +103,26 @@ struct JobRow: View {
                     }
                     if !job.counts.isEmpty { SeverityCounts(text: job.counts, size: 11.5).padding(.leading, 26) }
                     HStack(spacing: 8) {
-                        Spacer()
-                        Button("Discard") { store.cancel(job) }.buttonStyle(.goblinQuiet)
-                        // Straight from the card: no need to open the review first. It posts
-                        // exactly what the preview holds (no edits), under your name.
-                        Button(store.postingJobs.contains(job.id) ? "Posting…" : "Post") {
-                            Task { await store.post(job) }
+                        if let pending = store.pendingSends[job.id] {
+                            TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                                Text(PendingLabel.text(pending, now: ctx.date))
+                                    .font(.system(size: 11.5)).foregroundStyle(.secondary).monospacedDigit()
+                            }
+                            .padding(.leading, 26)
+                            Spacer()
+                            Button("Undo") { store.undoPending(job.id) }.buttonStyle(.goblinPrimarySmall)
+                        } else {
+                            Spacer()
+                            Button("Discard") { store.scheduleDiscard(job) }.buttonStyle(.goblinQuiet)
+                            // Straight from the card: no need to open the review first. It posts
+                            // exactly what the preview holds (no edits), under your name.
+                            Button(store.postingJobs.contains(job.id) ? "Posting…" : "Post") {
+                                store.schedulePost(job)
+                            }
+                            .buttonStyle(.goblinSmall).disabled(store.postingJobs.contains(job.id))
+                            .help("Post this review to GitHub as it is. You get a few seconds to undo it.")
+                            Button("Read review") { open(job) }.buttonStyle(.goblinPrimarySmall)
                         }
-                        .buttonStyle(.goblinSmall).disabled(store.postingJobs.contains(job.id))
-                        .help("Post this review to GitHub as it is")
-                        Button("Read review") { open(job) }.buttonStyle(.goblinPrimarySmall)
                     }
                 }
             }
@@ -120,6 +130,14 @@ struct JobRow: View {
         .contentShape(Rectangle())
         .onTapGesture { open(job) }
         .accessibilityAction(named: "Open review") { open(job) }
+    }
+}
+
+/// "Posting in 4s", counting down the undo window.
+enum PendingLabel {
+    static func text(_ p: PendingSend, now: Date) -> String {
+        let left = max(1, Int(p.at.timeIntervalSince(now).rounded(.up)))
+        return p.kind == .post ? "Posting in \(left)s" : "Discarding in \(left)s"
     }
 }
 
@@ -178,7 +196,12 @@ struct RecentRow: View {
             }
         }
         if let e = item.entry {
-            return "\(e.shortRepo) #\(e.number) · " + (e.kind == .posted ? "posted" : (e.reason.isEmpty ? "failed" : e.reason))
+            switch e.kind {
+            case .posted: return "\(e.shortRepo) #\(e.number) · posted"
+            case .failed: return "\(e.shortRepo) #\(e.number) · \(e.failureWords)"
+            case .previewed: return "\(e.shortRepo) #\(e.number) · reviewed, not posted"
+            case .skipped: return "\(e.shortRepo) #\(e.number) · " + (e.reason.isEmpty ? "skipped" : e.reason)
+            }
         }
         return ""
     }

@@ -26,6 +26,10 @@ ONLY_PR=""; ONLY_REPO=""; DRY_RUN=false; FORCE=false; SCHEDULED=false
 # person to read first (see engine_save_preview). Only manual jobs set it.
 PREVIEW=false
 ENGINE_MINE=""
+# Set when the run must end early: "quota" = the provider hit its usage limit and no
+# fallback is free, so every further PR would fail the same way.
+ENGINE_STOP=""; ENGINE_STOP_PROVIDER=""
+ENGINE_MODEL_PROVIDER=""; ENGINE_MODEL_KIND=""
 GOBLIN_LAST_REVIEW_URL=""
 REVIEWS_THIS_RUN=0
 
@@ -70,11 +74,20 @@ cmd_run() {
   # inside a command substitution — a subshell — so its sourcing is discarded and
   # provider_<name>_review would not exist by the time the engine calls it.
   providers_load
-  provider="$(providers_pick)" || {
-    log "no usable provider (run: goblin provider list)"
-    status_set '{"state":"error","activity":"no usable AI provider"}'
-    return 1
-  }
+  if ! provider="$(providers_pick)"; then
+    # Usable, but resting after a usage limit: a pause with a time on it, not a fault.
+    # A person who asked for one PR gets it tried anyway, since the limit may be over.
+    if provider="$(providers_pick --allow-cooling)"; then
+      if [ -z "$ONLY_PR" ]; then
+        engine_pause_for_quota "$provider"
+        lock_release; return 0
+      fi
+    else
+      log "no usable provider (run: goblin provider list)"
+      status_set '{"state":"error","activity":"no usable AI provider"}'
+      return 1
+    fi
+  fi
   log "provider: $provider"
 
   local slug repos
@@ -108,6 +121,12 @@ cmd_run() {
     engine_repo "$slug" "$ENGINE_REPO_PROVIDER"
     if [ "$had_overlay" = set ]; then GOBLIN_CFG_OVERLAY="$saved_overlay"; export GOBLIN_CFG_OVERLAY
     else unset GOBLIN_CFG_OVERLAY; fi
+    # A repo's own provider running out stops that repo, not the repos the run's
+    # provider is still fine for.
+    if [ "$ENGINE_STOP" = quota ] && [ "$ENGINE_STOP_PROVIDER" != "$provider" ]; then
+      ENGINE_STOP=""; ENGINE_STOP_PROVIDER=""
+    fi
+    [ -n "$ENGINE_STOP" ] && break
   done
 
   # After the reviews, never before: a version check is the least important thing
@@ -118,11 +137,27 @@ cmd_run() {
   local newer; newer="$(update_available)" && \
     log "update available: v$GOBLIN_VERSION → v$newer ($(update_instructions))"
 
+  if [ "$ENGINE_STOP" = quota ]; then
+    engine_pause_for_quota "$provider"
+    log "=== run done ($REVIEWS_THIS_RUN reviewed, stopped at a usage limit) ==="
+    return 0
+  fi
   local fin; fin="$(now_epoch)"
   status_set "$(jq -nc --argjson f "$fin" \
     --argjson n "$((fin + $(cfg_get '.intervalSeconds' 900)))" \
     '{state:"idle",pausedReason:"",activity:"",lastRunFinished:$f,nextRunEstimate:$n}')"
   log "=== run done ($REVIEWS_THIS_RUN reviewed) ==="
+}
+
+# engine_pause_for_quota <provider> — the run stops until the provider's limit resets.
+# The panel says who ran out and when it tries again; the menu bar shows a pause.
+engine_pause_for_quota() {
+  local p="$1" until fin; until="$(provider_cooldown_until "$p")"; fin="$(now_epoch)"
+  [ "${until:-0}" -gt "$fin" ] 2>/dev/null || until=$((fin + $(cfg_get '.intervalSeconds' 900)))
+  log "$p is at its usage limit and no fallback is free — resting until $(date -r "$until" '+%H:%M')"
+  status_set "$(jq -nc --arg p "$p" --argjson u "$until" --argjson f "$fin" \
+    '{state:"paused",pausedReason:"provider_quota",pausedProvider:$p,resumeAt:$u,
+      activity:"",lastRunFinished:$f,nextRunEstimate:$u}')"
 }
 
 # --- gates ----------------------------------------------------------------
@@ -212,6 +247,10 @@ engine_repo_provider() {
     *) log "  $slug: unknown provider '$(trunc "$want" 20)' in its repo settings — using $def"; return 0 ;;
   esac
   if [ "$want" != "$def" ]; then
+    if provider_cooling "$want"; then
+      log "  $slug: its provider $want is resting after a usage limit — using $def"
+      return 0
+    fi
     command -v "provider_${want}_probe" >/dev/null 2>&1 || providers_load
     probe="$("provider_${want}_probe" 2>/dev/null)"
     if [ "$(printf '%s' "$probe" | jq -r '.available and .authed' 2>/dev/null)" != "true" ]; then
@@ -275,6 +314,7 @@ engine_repo() {
     entry="$(jq -c --argjson i "$i" '.[$i]' "$prs")"
     i=$((i + 1))
     engine_pr "$slug" "$entry" "$provider" || true
+    [ -n "$ENGINE_STOP" ] && break
   done
   ENGINE_MINE=""
   rm -f "$prs" "$prs.sorted" 2>/dev/null
@@ -399,6 +439,18 @@ engine_pr() {
 
   engine_budget_ok || return 1
 
+  # --- gate: is the provider resting after a usage limit? (free) ---
+  # Checked before the claim: a teammate whose provider is fine should get this PR.
+  if provider_cooling "$provider"; then
+    local alt; alt="$(providers_pick)" || alt=""
+    if [ -n "$alt" ]; then
+      provider="$alt"
+    elif [ -z "$ONLY_PR" ]; then
+      log "  #$pr: $provider is at its usage limit and no fallback is free — stopping"
+      ENGINE_STOP=quota; ENGINE_STOP_PROVIDER="$provider"; return 1
+    fi
+  fi
+
   # --- gate: is it still open? (1 call, saves a whole model run) ---
   # The PR list is a snapshot from the top of the run; anything in it may have
   # merged since. Reviewing a merged PR costs a model call and posts advice
@@ -445,6 +497,91 @@ engine_review_pr() {
   engine_review_pr_locked "$@"; rc=$?
   repo_lock_release
   return $rc
+}
+
+# engine_fail <slug> <pr> <head> <title> <url> <kind> <provider> <model> <cost> <raw>
+#
+# One failure, told the same way everywhere: what went wrong in words (never a bare
+# "other"), and when the Goblin tries again. Our failure must not look like the PR's:
+# a scheduled review that will be retried leaves its check pending with the time,
+# rather than a red error on a teammate's pull request.
+engine_fail() {
+  local slug="$1" pr="$2" head="$3" title="$4" url="$5" kind="$6" provider="$7"
+  local model="${8:-}" cost="${9:-0}" raw="${10:-}"
+  local words retry_at=0 next when="" sentence
+  # A signed-out AI CLI is not a signed-out GitHub, which jobs already call "auth".
+  [ "$kind" = auth ] && kind=provider_auth
+  words="$(failure_words "$kind" "$provider")"
+  events_append failed "$pr" "$title" "$url" "$cost" "$kind" "$slug" "$provider" "$model"
+  # A usage limit is not this PR's fault: it must not count towards the PR's backoff
+  # (or the menu bar would call it stuck). The provider's cooldown covers it.
+  if [ "$kind" = quota ]; then
+    retry_at="$(provider_cooldown_until "$provider")"
+  else
+    attempt_record "${pr}:${head}" "$kind"
+    retry_at="$(jq -r --arg k "$(attempt_key "$pr" "$head")" '.[$k].nextAt // 0' "$(attempt_file)" 2>/dev/null)"
+  fi
+  case "$retry_at" in ''|*[!0-9]*) retry_at=0 ;; esac
+  next=$(( $(now_epoch) + $(cfg_get '.intervalSeconds' 900) ))
+  [ "$retry_at" -gt "$next" ] || retry_at="$next"
+  when="$(date -r "$retry_at" '+%H:%M')"
+
+  # A preview never touched GitHub on the way in, so it must not on the way out
+  # either: this used to post a red "review failed" on PRs nobody had been told about.
+  local public=true
+  { [ "$PREVIEW" = true ] || [ "$DRY_RUN" = true ]; } && public=false
+  if [ -z "$ONLY_PR" ]; then
+    sentence="$(ucfirst "$words"). The Goblin tries again around $when."
+    notify failed "Couldn't review #$pr" "$(ucfirst "$words"). Trying again around $when." failed
+    [ "$public" = true ] && gh_status "$slug" "$head" pending "Couldn't finish: $words. Trying again around $when."
+  else
+    retry_at=0
+    sentence="$(ucfirst "$words")."
+    notify failed "Couldn't review #$pr" "$sentence" failed
+    [ "$public" = true ] && gh_status "$slug" "$head" error "Couldn't finish: $words."
+  fi
+  status_set '{"state":"idle","activity":""}'
+  job_phase failed "$(jq -nc --arg k "$kind" --arg m "$sentence" --arg r "$raw" --arg p "$provider" \
+    --argjson at "$retry_at" '{error:$k, errorDetail:$m, errorRaw:$r, errorProvider:$p, retryAt:$at}')"
+}
+
+# engine_model_run <provider> <work> <checkout> <pr> — the model run, with one fallback.
+#
+# A usage limit is the provider's, not this PR's: the provider rests until it resets,
+# and when providerFallback names one that is free, the same PR is reviewed with it
+# straight away. Sets ENGINE_MODEL_PROVIDER (who reviewed, or failed last) and
+# ENGINE_MODEL_KIND (the failure kind, empty on success); stops a scheduled run when
+# nobody is left to review with.
+engine_model_run() {
+  local provider="$1" work="$2" dir="$3" pr="$4" until alt
+  ENGINE_MODEL_PROVIDER="$provider"; ENGINE_MODEL_KIND=""
+  if findings_run "$provider" "$work/prompt.txt" "$dir" "$work/norm.json" "$work/raw"; then
+    return 0
+  fi
+  ENGINE_MODEL_KIND="${GOBLIN_P_ERRKIND:-other}"
+  log "  #$pr: review failed ($ENGINE_MODEL_KIND) ${GOBLIN_P_ERRMSG:-}"
+  [ "$ENGINE_MODEL_KIND" = quota ] || return 1
+  job_cancel_requested && return 1
+  until="$(provider_cooldown_set "$provider" "${GOBLIN_P_ERRMSG:-}")"
+  log "  #$pr: $provider hit its usage limit — resting it until $(date -r "$until" '+%H:%M')"
+  alt="$(providers_pick)" || alt=""
+  if [ -z "$alt" ] || [ "$alt" = "$provider" ]; then
+    [ -z "$ONLY_PR" ] && { ENGINE_STOP=quota; ENGINE_STOP_PROVIDER="$provider"; }
+    return 1
+  fi
+  log "  #$pr: reviewing with $alt instead (providerFallback)"
+  ENGINE_MODEL_PROVIDER="$alt"
+  rm -rf "$work/raw"; mkdir -p "$work/raw"
+  if findings_run "$alt" "$work/prompt.txt" "$dir" "$work/norm.json" "$work/raw"; then
+    ENGINE_MODEL_KIND=""; return 0
+  fi
+  ENGINE_MODEL_KIND="${GOBLIN_P_ERRKIND:-other}"
+  log "  #$pr: $alt failed too ($ENGINE_MODEL_KIND) ${GOBLIN_P_ERRMSG:-}"
+  if [ "$ENGINE_MODEL_KIND" = quota ]; then
+    provider_cooldown_set "$alt" "${GOBLIN_P_ERRMSG:-}" >/dev/null
+    [ -z "$ONLY_PR" ] && { ENGINE_STOP=quota; ENGINE_STOP_PROVIDER="$provider"; }
+  fi
+  return 1
 }
 
 engine_review_pr_locked() {
@@ -520,9 +657,10 @@ engine_review_pr_locked() {
 
   # 5. run the model
   job_phase reviewing
-  if ! findings_run "$provider" "$work/prompt.txt" "${checkout:-$work}" "$work/norm.json" "$work/raw"; then
-    local kind="${GOBLIN_P_ERRKIND:-other}"
-    log "  #$pr: review failed ($kind) ${GOBLIN_P_ERRMSG:-}"
+  local reviewed=false kind=""
+  if engine_model_run "$provider" "$work" "${checkout:-$work}" "$pr"; then reviewed=true; fi
+  provider="$ENGINE_MODEL_PROVIDER"; kind="$ENGINE_MODEL_KIND"
+  if [ "$reviewed" != true ]; then
     # A cancel kills the model mid-run, which surfaces here as an ordinary failure.
     # It is not one: it must not be recorded, retried-around or notified.
     if job_cancel_requested; then rm -rf "$work"; return 130; fi
@@ -531,14 +669,11 @@ engine_review_pr_locked() {
     rm -rf "$GOBLIN_HOME/last-failure"
     cp -R "$work" "$GOBLIN_HOME/last-failure" 2>/dev/null \
       && log "  #$pr: raw output kept at $GOBLIN_HOME/last-failure"
-    events_append failed "$pr" "$title" "$url" "${GOBLIN_P_COST_USD:-0}" "$kind" "$slug" "$provider" "${GOBLIN_P_MODEL:-}"
-    notify failed "$GOBLIN_NAME failed ⚠️" "#$pr — $kind"
-    gh_status "$slug" "$head" error "review failed: $kind"
-    attempt_record "${pr}:${head}" "$kind"
-    status_set '{"state":"idle","activity":""}'
-    job_phase failed "$(jq -nc --arg k "$kind" --arg m "${GOBLIN_P_ERRMSG:-}" '{error:$k, errorDetail:$m}')"
+    engine_fail "$slug" "$pr" "$head" "$title" "$url" "$kind" "$provider" \
+      "${GOBLIN_P_MODEL:-}" "${GOBLIN_P_COST_USD:-0}" "${GOBLIN_P_ERRMSG:-}"
     rm -rf "$work"; return 1
   fi
+  provider_cooldown_clear "$provider"
 
   # 5b. a second, skeptical look — only where nobody reads the review before it posts
   if [ "$PREVIEW" != true ] && [ "$(cfg_get '.refutePass' true)" = "true" ]; then
@@ -715,11 +850,8 @@ engine_publish() {
                      "$provider" "$model" "$GOBLIN_LOGIN" "$work/files.json" "$event" > "$work/body.md"
   if ! post_build_review "$work/split.json" "$work/body.md" "$head" "$event" \
                          "$provider" "$model" "$pr" "$work/review.json"; then
-    events_append failed "$pr" "$title" "$url" "$cost" "payload incomplete" "$slug" "$provider" "$model"
-    notify failed "$GOBLIN_NAME failed ⚠️" "#$pr — review payload was incomplete"
-    gh_status "$slug" "$head" error "review payload was incomplete"
-    attempt_record "${pr}:${head}" "payload"
-    job_phase failed '{"error":"payload","errorDetail":"The review payload was incomplete, so nothing was posted."}'
+    engine_fail "$slug" "$pr" "$head" "$title" "$url" payload "$provider" "$model" "$cost" \
+      "The review payload was incomplete, so nothing was posted."
     return 1
   fi
 
@@ -737,11 +869,8 @@ engine_publish() {
   local review_url
   if ! review_url="$(post_review "$slug" "$pr" "$work/review.json" "$work/err.json")"; then
     log "  #$pr: posting failed — $(head -c 200 "$work/err.json" 2>/dev/null)"
-    events_append failed "$pr" "$title" "$url" "$cost" "post failed" "$slug" "$provider" "$model"
-    notify failed "$GOBLIN_NAME failed ⚠️" "#$pr — could not post review"
-    gh_status "$slug" "$head" error "could not post review"
-    attempt_record "${pr}:${head}" "post"
-    job_phase failed '{"error":"post","errorDetail":"GitHub rejected the review."}'
+    engine_fail "$slug" "$pr" "$head" "$title" "$url" post "$provider" "$model" "$cost" \
+      "$(jq -r '.message // empty' "$work/err.json" 2>/dev/null | head -c 300)"
     return 1
   fi
 

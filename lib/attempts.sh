@@ -86,7 +86,7 @@ attempt_reason() {
   [ "$n" -gt 0 ] || return 0
   case "$next" in ''|null|*[!0-9]*) next=0 ;; esac
   [ "$next" -gt "$(now_epoch)" ] && when=", next try $(date -r "$next" '+%H:%M')"
-  case "$kind" in ''|null) kind="" ;; *) kind=" ($kind)" ;; esac
+  case "$kind" in ''|null) kind="" ;; *) kind=" ($(failure_words "$kind" "$(cfg_get '.provider' '')"))" ;; esac
   printf '%s failed attempt(s)%s%s' "$n" "$kind" "$when"
 }
 

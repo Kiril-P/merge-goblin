@@ -101,6 +101,13 @@ struct Job: Identifiable, Equatable {
     var pid: Int
     var error: String
     var errorDetail: String
+    /// What the AI CLI itself said, for the "details" a person can expand. Absent on
+    /// jobs written before it existed, whose errorDetail held that raw text instead.
+    var errorRaw: String
+    var hasErrorRaw: Bool
+    var errorProvider: String
+    /// When the scheduler will try this PR again on its own (0 = it won't).
+    var retryAt: Date?
     var reason: String        // why a skipped job was skipped (a code)
     var reasonDetail: String  // …and in words, when the engine gave some (skip rules do)
     var counts: String       // "🔴 1 blocker · ⚪ 1 nit"
@@ -133,6 +140,11 @@ struct Job: Identifiable, Equatable {
         pid = json["pid"].int(0)
         error = json["error"].string("")
         errorDetail = json["errorDetail"].string("")
+        errorRaw = json["errorRaw"].string("")
+        hasErrorRaw = json["errorRaw"].exists
+        errorProvider = json["errorProvider"].string(json["providerUsed"].string(json["provider"].string("")))
+        let r = json["retryAt"].double(0)
+        retryAt = r > 0 ? Date(timeIntervalSince1970: r) : nil
         reason = json["reason"].string("")
         reasonDetail = json["reasonDetail"].string("")
         counts = json["result"]["counts"].string("")
@@ -159,17 +171,21 @@ struct Job: Identifiable, Equatable {
     }
 
     var failureMessage: String {
-        if !errorDetail.isEmpty { return errorDetail }
-        switch error {
-        case "interrupted": return "The review process stopped before it finished."
-        case "timeout": return "The AI took too long and was stopped."
-        case "auth": return "GitHub is not signed in as the configured account."
-        case "provider": return "No AI CLI is installed and signed in."
-        case "quota": return "The AI subscription hit its usage limit."
-        case "not_found": return "That pull request was not found, or this account cannot see it."
-        case "": return "The review did not finish."
-        default: return "The review failed (\(error))."
+        // Older jobs kept the CLI's raw output in errorDetail ("Connection lost,
+        // reconnecting… Retry attempt 1…"). For a kind we can name, say it in words and
+        // leave the raw text to the details.
+        if !hasErrorRaw, FailureText.providerKinds.contains(error) {
+            return FailureText.sentence(error, provider: errorProvider)
         }
+        if !errorDetail.isEmpty { return errorDetail }
+        if error.isEmpty { return "The review did not finish." }
+        return FailureText.sentence(error, provider: errorProvider)
+    }
+
+    /// The CLI's own words, when there are any beyond the message above.
+    var failureDetails: String {
+        if hasErrorRaw { return errorRaw }
+        return FailureText.providerKinds.contains(error) ? errorDetail : ""
     }
 
     var skipMessage: String {
@@ -184,6 +200,38 @@ struct Job: Identifiable, Equatable {
     }
 
     private static func detail(_ d: String) -> String { d.isEmpty ? "" : " (\(d))" }
+}
+
+// MARK: - What went wrong, in words
+
+/// The same table as failure_words in lib/brand.sh: nothing ever reads "other".
+enum FailureText {
+    /// Kinds the engine derives from an AI CLI's output.
+    static let providerKinds: Set<String> = ["quota", "provider_auth", "transient", "timeout", "bad_output", "other"]
+
+    static func words(_ kind: String, provider: String) -> String {
+        let p = provider.isEmpty ? "the AI" : ProviderInfo.displayName(provider)
+        switch kind {
+        case "quota": return "\(p) hit its usage limit"
+        case "provider_auth": return "\(p) is signed out"
+        case "auth": return "GitHub is not signed in as the configured account"
+        case "transient": return "lost the connection to \(p)"
+        case "timeout": return "\(p) took too long and was stopped"
+        case "bad_output": return "\(p)'s answer could not be read"
+        case "payload", "payload incomplete": return "the review could not be put together"
+        case "post", "post failed": return "GitHub didn't accept the review"
+        case "no_files": return "GitHub returned no changed files"
+        case "interrupted": return "the review process stopped before it finished"
+        case "not_found": return "that pull request was not found, or this account cannot see it"
+        case "provider": return "no AI CLI is installed and signed in"
+        default: return "\(p) stopped with an error"
+        }
+    }
+
+    static func sentence(_ kind: String, provider: String) -> String {
+        let w = words(kind, provider: provider)
+        return w.prefix(1).uppercased() + w.dropFirst() + "."
+    }
 }
 
 // MARK: - A review waiting to be read
@@ -362,6 +410,26 @@ struct HistoryEntry: Identifiable, Equatable {
     let costUsd: Double
     let reason: String
     var shortRepo: String { repo.split(separator: "/").last.map(String.init) ?? repo }
+    /// A failure's reason is a code ("transient"); this is it in words.
+    var failureWords: String { reason.isEmpty ? "failed" : FailureText.words(reason, provider: provider) }
+}
+
+/// What is wrong when the menu bar icon says "error", and what fixes it. Decided in
+/// lib/state.sh, beside the glyph, so the two cannot disagree.
+struct BarProblem: Equatable {
+    enum Action: String { case account, health, log }
+    let kind: String
+    let title: String
+    let detail: String
+    let action: Action
+
+    init?(json: JSON) {
+        guard let t = json["title"].string, !t.isEmpty else { return nil }
+        kind = json["kind"].string("")
+        title = t
+        detail = json["detail"].string("")
+        action = Action(rawValue: json["action"].string("")) ?? .health
+    }
 }
 
 struct ProviderInfo: Identifiable, Equatable {
@@ -434,6 +502,9 @@ struct Snapshot: Equatable {
     var glyph: BarGlyph = .idle
     var barCount = 0
     var statusLine = ""
+    var problem: BarProblem? = nil
+    var lastRunFinished: Date? = nil
+    var nextRunEstimate: Date? = nil
     var login = ""
     var identityOK = true
     var providerId = "claude"
@@ -473,6 +544,8 @@ struct Snapshot: Equatable {
         var reviewMineDrafts = false
         var maxConcurrentJobs = 2
         var lastRepo = ""
+        /// The one provider that reviews while the main one is at its usage limit.
+        var providerFallback = ""
         var notifyStarted = true
         var notifyPosted = true
         var notifyFailed = true
@@ -503,7 +576,8 @@ struct Snapshot: Equatable {
             && a.repos == b.repos
             && a.fleet == b.fleet && a.pausedReason == b.pausedReason && a.reviewsTotal == b.reviewsTotal
             && a.version == b.version && a.updateLatest == b.updateLatest && a.updateURL == b.updateURL
-            && a.agentInstalled == b.agentInstalled
+            && a.agentInstalled == b.agentInstalled && a.problem == b.problem
+            && a.lastRunFinished == b.lastRunFinished && a.nextRunEstimate == b.nextRunEstimate
     }
 
     init() {}
@@ -523,6 +597,10 @@ struct Snapshot: Equatable {
         if !setupComplete { glyph = .error }
         barCount = setupComplete ? max(0, ui["bar"]["count"].int(0)) : 0
         statusLine = ui["bar"]["tooltip"].string("")
+        problem = setupComplete ? BarProblem(json: ui["bar"]["problem"]) : nil
+        let fin = ui["lastRunFinished"].double(0), next = ui["nextRunEstimate"].double(0)
+        lastRunFinished = fin > 0 ? Date(timeIntervalSince1970: fin) : nil
+        nextRunEstimate = next > 0 ? Date(timeIntervalSince1970: next) : nil
         login = ui["identity"]["login"].string("")
         identityOK = ui["identity"]["ok"].bool(true)
         providerId = ui["provider"]["id"].string("claude")
@@ -567,6 +645,7 @@ struct Snapshot: Equatable {
         st.reviewMineDrafts = s["reviewMineDrafts"].bool(false)
         st.maxConcurrentJobs = s["maxConcurrentJobs"].int(2)
         st.lastRepo = s["lastRepo"].string("")
+        st.providerFallback = s["providerFallback"].array.first?.string ?? ""
         st.notifyStarted = s["notify"]["started"].bool(true)
         st.notifyPosted = s["notify"]["posted"].bool(true)
         st.notifyFailed = s["notify"]["failed"].bool(true)

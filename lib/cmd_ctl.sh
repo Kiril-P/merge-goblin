@@ -58,12 +58,12 @@ cmd_ctl() {
         *) v="${1:-show}" ;;
       esac
       if [ "$v" = "show" ]; then
-        echo "daily cap: \$$(cfg_get '.budgetCapUsd' 0)  ·  spent today: \$$(today_spend)"
+        echo "daily budget: \$$(cfg_get '.budgetCapUsd' 0)  ·  spent today: \$$(today_spend)"
       else
         [ "$v" = "off" ] && v=0
         cfg_set ".budgetCapUsd=$(printf '%s' "$v" | jq -R 'tonumber? // 0')"
         status_set '{}'
-        echo "daily cap set to \$$(cfg_get '.budgetCapUsd' 0)"
+        echo "daily budget set to \$$(cfg_get '.budgetCapUsd' 0)"
       fi ;;
 
     repos|repo)

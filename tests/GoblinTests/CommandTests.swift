@@ -103,6 +103,8 @@ final class CommandTests: XCTestCase {
     func testSkipFlagsUseTheCLINames() throws {
         XCTAssertEqual(try argv(.setFlag(key: .skipBots, on: false)), ["panel", "set", "flag", "skip-bots", "off"])
         XCTAssertEqual(try argv(.setFlag(key: .skipDocsOnly, on: true)), ["panel", "set", "flag", "skip-docs-only", "on"])
+        XCTAssertEqual(try argv(.setProviderFallback(.codex)), ["panel", "set", "provider-fallback", "codex"])
+        XCTAssertEqual(try argv(.setProviderFallback(nil)), ["panel", "set", "provider-fallback", "none"])
     }
 
     func testPatterns() {

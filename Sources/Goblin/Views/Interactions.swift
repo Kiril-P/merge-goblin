@@ -168,8 +168,12 @@ struct JobContextMenu: View {
     var body: some View {
         Button(job.phase == .ready ? "Read review" : "Open") { windows.showJob(job.id) }
         if job.phase == .ready {
-            Button("Post to GitHub") { Task { await store.post(job) } }
-            Button("Discard") { store.cancel(job) }
+            if store.pendingSends[job.id] != nil {
+                Button("Undo") { store.undoPending(job.id) }
+            } else {
+                Button("Post to GitHub") { store.schedulePost(job) }
+                Button("Discard") { store.scheduleDiscard(job) }
+            }
         }
         if job.phase.isActive { Button("Cancel review") { store.cancel(job) } }
         Divider()

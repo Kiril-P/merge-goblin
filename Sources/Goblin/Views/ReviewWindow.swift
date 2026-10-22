@@ -158,8 +158,8 @@ private struct PreviewPane: View {
 
     private var preview: ReviewPreview? { store.preview(for: job.id) }
     private var edits: ReviewEdits { store.edits[job.id] ?? ReviewEdits() }
-    @State private var confirmDiscard = false
     private var posting: Bool { job.phase == .posting || store.postingJobs.contains(job.id) }
+    private var pending: PendingSend? { store.pendingSends[job.id] }
 
     // keyboard
     /// The finding the arrow keys are on, by index into the preview's findings.
@@ -362,23 +362,31 @@ private struct PreviewPane: View {
                 }
                 Spacer()
                 if !edits.isEmpty { Button("Reset edits") { store.edits[job.id] = nil }.buttonStyle(.goblinQuiet) }
-                Button("Discard") { confirmDiscard = true }.buttonStyle(.goblin).disabled(posting)
-                    .confirmationDialog("Discard this review?", isPresented: $confirmDiscard) {
-                        Button("Discard review", role: .destructive) { store.cancel(job) }
-                    } message: { Text("Nothing has been posted. Your edits will be lost.") }
-                Button {
-                    Task { await store.post(job) }
-                } label: {
-                    HStack(spacing: 6) {
-                        if posting { ProgressView().controlSize(.small) }
-                        Text(posting ? "Posting…" : "Post to GitHub")
+                if let pending {
+                    // the undo window: say what is about to happen, and offer to stop it
+                    TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                        Text(PendingLabel.text(pending, now: ctx.date))
+                            .font(.system(size: 12.5)).foregroundStyle(.secondary).monospacedDigit()
                     }
+                    Button("Undo") { store.undoPending(job.id) }
+                        .buttonStyle(.goblinPrimary)
+                } else {
+                    Button("Discard") { store.scheduleDiscard(job) }.buttonStyle(.goblin).disabled(posting)
+                        .help("Discard this review. You get a few seconds to undo it.")
+                    Button {
+                        store.schedulePost(job)
+                    } label: {
+                        HStack(spacing: 6) {
+                            if posting { ProgressView().controlSize(.small) }
+                            Text(posting ? "Posting…" : "Post to GitHub")
+                        }
+                    }
+                    .buttonStyle(.goblinPrimary).disabled(posting)
+                    // Withheld while anything is being edited: ⌘↩ in a text editor is a
+                    // finger slip far more often than "send this under my name".
+                    .keyboardShortcut(editingAnything ? nil : KeyboardShortcut(.return, modifiers: .command))
+                    .help(editingAnything ? "Finish editing (Esc) to post with ⌘↩" : "Post to GitHub (⌘↩)")
                 }
-                .buttonStyle(.goblinPrimary).disabled(posting)
-                // Withheld while anything is being edited: ⌘↩ in a text editor is a
-                // finger slip far more often than "send this under my name".
-                .keyboardShortcut(editingAnything ? nil : KeyboardShortcut(.return, modifiers: .command))
-                .help(editingAnything ? "Finish editing (Esc) to post with ⌘↩" : "Post to GitHub (⌘↩)")
             }
             KeyHints(editing: editingAnything, hasFindings: !p.findings.isEmpty)
         }
@@ -609,6 +617,13 @@ private struct DonePane: View {
 private struct FailedPane: View {
     let store: AppStore
     let job: Job
+    @State private var showDetails = false
+
+    /// Another AI that is installed and signed in, for when this one ran out.
+    private var others: [ProviderInfo] {
+        store.providers.filter { $0.ready && $0.name != job.errorProvider }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             JobHeader(job: job, store: store)
@@ -618,9 +633,19 @@ private struct FailedPane: View {
                     Label("The review didn't finish", systemImage: "exclamationmark.triangle.fill")
                         .font(.system(size: 16, weight: .semibold)).foregroundStyle(Color(nsColor: .systemRed))
                     Text(job.failureMessage).font(.system(size: 13)).foregroundStyle(.secondary)
-                    HStack {
-                        Button("Try again") { retry() }.buttonStyle(.goblinPrimary)
-                        Button("Open the log") { store.openLog() }.buttonStyle(.goblin)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let hint { Text(hint).font(.system(size: 12.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+                    actions
+                    if !job.failureDetails.isEmpty {
+                        DisclosureGroup(isExpanded: $showDetails) {
+                            Text(job.failureDetails)
+                                .font(.system(size: 11.5, design: .monospaced)).foregroundStyle(.secondary)
+                                .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.top, 4)
+                        } label: {
+                            Text("What \(job.errorProvider.isEmpty ? "the tool" : ProviderInfo.displayName(job.errorProvider)) said")
+                                .font(.system(size: 12)).foregroundStyle(.secondary)
+                        }
                     }
                 }
                 Spacer(minLength: 0)
@@ -629,10 +654,53 @@ private struct FailedPane: View {
             }
             Spacer()
         }.padding(28)
+        .task { if job.error == "quota", store.providers.isEmpty { await store.refreshProviders() } }
     }
-    private func retry() {
+
+    /// The next step, in words, when it is not just "try again".
+    private var hint: String? {
+        switch job.error {
+        case "quota":
+            if !others.isEmpty { return "You can review it with another AI you're signed in to." }
+            return "It resets on its own. A backup AI in Settings › Reviewer keeps reviews going meanwhile."
+        case "provider_auth", "provider":
+            return "Sign in again in Terminal, then try again. Settings › Reviewer shows how."
+        case "auth":
+            return "Pick the account the Goblin posts as in Settings › General."
+        case "transient":
+            return "Usually a network blip. Trying again normally works."
+        default:
+            return nil   // a scheduled failure's message already says when it is retried
+        }
+    }
+
+    @ViewBuilder private var actions: some View {
+        HStack {
+            switch job.error {
+            case "quota":
+                if let p = others.first, let id = ProviderId(rawValue: p.name) {
+                    Button("Review with \(p.displayName)") { retry(with: id) }.buttonStyle(.goblinPrimary)
+                    Button("Try again") { retry() }.buttonStyle(.goblin)
+                } else {
+                    Button("Set a backup AI") { WindowManager.shared.showSettings(.reviewer) }.buttonStyle(.goblinPrimary)
+                    Button("Try again") { retry() }.buttonStyle(.goblin)
+                }
+            case "provider_auth", "provider":
+                Button("Open Reviewer settings") { WindowManager.shared.showSettings(.reviewer) }.buttonStyle(.goblinPrimary)
+                Button("Try again") { retry() }.buttonStyle(.goblin)
+            case "auth":
+                Button("Open account settings") { WindowManager.shared.showSettings(.general) }.buttonStyle(.goblinPrimary)
+                Button("Try again") { retry() }.buttonStyle(.goblin)
+            default:
+                Button("Try again") { retry() }.buttonStyle(.goblinPrimary)
+                Button("Open the log") { store.openLog() }.buttonStyle(.goblin)
+            }
+        }
+    }
+
+    private func retry(with provider: ProviderId? = nil) {
         guard let ref = PRRef.parse("\(job.repo)#\(job.number)") else { return }
-        var o = ReviewOptions(); o.focus = job.focus; o.mode = job.mode; o.force = true
+        var o = ReviewOptions(); o.focus = job.focus; o.mode = job.mode; o.force = true; o.provider = provider
         Task { if let j = await store.startReview(ref, options: o) { WindowManager.shared.showJob(j.id) } }
     }
 }
@@ -670,10 +738,25 @@ private struct EndedPane: View {
         VStack(alignment: .leading, spacing: 20) {
             JobHeader(job: job, store: store)
             Card(padding: 20) {
-                Label(job.phase == .discarded ? "Discarded — nothing was posted" : "Cancelled — nothing was posted",
-                      systemImage: Theme.symbol(for: job.phase)).font(.system(size: 15, weight: .semibold))
+                VStack(alignment: .leading, spacing: 12) {
+                    Label(title, systemImage: Theme.symbol(for: job.phase)).font(.system(size: 15, weight: .semibold))
+                    // Not a dead end: the PR is still there, and so is the way back to it.
+                    HStack {
+                        Button("Review again") { again() }.buttonStyle(.goblinPrimary)
+                        Button("Open the pull request") { store.openURL(job.url) }.buttonStyle(.goblin)
+                    }
+                }
             }
             Spacer()
         }.padding(28)
+    }
+    private var title: String {
+        if job.reason == "superseded" { return "Replaced by a review of a newer commit — nothing was posted" }
+        return job.phase == .discarded ? "Discarded — nothing was posted" : "Cancelled — nothing was posted"
+    }
+    private func again() {
+        guard let ref = PRRef.parse("\(job.repo)#\(job.number)") else { return }
+        var o = ReviewOptions(); o.focus = job.focus; o.mode = job.mode; o.force = true
+        Task { if let j = await store.startReview(ref, options: o) { WindowManager.shared.showJob(j.id) } }
     }
 }

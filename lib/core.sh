@@ -16,6 +16,12 @@ midnight_epoch() { date -v0H -v0M -v0S +%s; }
 tomorrow_epoch() { date -v+1d -v0H -v0M -v0S +%s; }
 week_ago_epoch() { echo $(( $(date +%s) - 604800 )); }
 
+# ucfirst <text> — the text with its first letter in capitals.
+ucfirst() {
+  local t="${1:-}"
+  printf '%s%s' "$(printf '%s' "${t:0:1}" | tr '[:lower:]' '[:upper:]')" "${t:1}"
+}
+
 log() { printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"; }
 
 # Send all further output to the log file, rotating first.
