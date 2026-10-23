@@ -1,0 +1,29 @@
+diff --git a/Sources/Goblin/App/Snapshot.swift b/Sources/Goblin/App/Snapshot.swift
+index 47b29ad..fd4c747 100644
+--- a/Sources/Goblin/App/Snapshot.swift
++++ b/Sources/Goblin/App/Snapshot.swift
+@@ -21,6 +21,24 @@ enum Snapshotter {
+         let runningID = store.activeJobs.first?.id ?? ""
+         let failedID = store.jobs.first { $0.phase == .failed }?.id ?? ""
+ 
++        // Demo video: the quick panel's field as it is typed into.
++        if ProcessInfo.processInfo.environment["GOBLIN_SNAPSHOT_QUICK"] != nil {
++            let pr = ResolvedPR(repo: "acme/billing-api", number: 873, title: "Fix proration when a plan changes mid-cycle",
++                                state: "open", merged: false, draft: false, author: "linus", url: "")
++            store.resolveOverride = { _, _ in .found(pr) }
++            for (i, text) in ["", "8", "87", "873"].enumerated() {
++                for scheme in [ColorScheme.light, .dark] {
++                    let input = ReviewInput(store: store)
++                    input.repoChoice = "acme/billing-api"
++                    input.text = text
++                    let v = ReviewField(input: input, store: store, autofocus: false).padding(16)
++                        .background(Color(nsColor: .windowBackgroundColor))
++                    await shot(v, 520, text == "873" ? 170 : 90, scheme, "\(dir)/quick-\(i)-\(scheme == .dark ? "dark" : "light").png")
++                }
++            }
++            NSApp.terminate(nil); return
++        }
++
+         for scheme in [ColorScheme.dark, .light] {
+             let tag = scheme == .dark ? "dark" : "light"
+             await shot(PopoverView(store: store), 400, 580, scheme, "\(dir)/popover-\(tag).png")

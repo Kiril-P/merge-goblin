@@ -1,0 +1,228 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; background: #000; }
+  body { font-family: -apple-system, "SF Pro Text", system-ui, sans-serif; -webkit-font-smoothing: antialiased; color: #1d1d1f; }
+  .abs { position: absolute; }
+  /* everything is a 1280×720 pt Mac screen drawn at 1.5× */
+  #desk { position: absolute; inset: 0; overflow: hidden; }
+  #wall { position: absolute; inset: -20px; background: url(wallpaper.jpg) center/cover; }
+
+  #menubar { position: absolute; left: 0; right: 0; top: 0; height: 36px; display: flex; align-items: center;
+    padding: 0 18px 0 24px; font-size: 19.5px; color: #111; letter-spacing: -.1px;
+    background: rgba(250,250,248,.55); backdrop-filter: blur(30px) saturate(1.6); box-shadow: 0 .5px 0 rgba(0,0,0,.08); z-index: 50; }
+  #menubar .l { display: flex; gap: 27px; align-items: center; }
+  #menubar .r { margin-left: auto; display: flex; gap: 22px; align-items: center; }
+  .sym { height: 21px; opacity: .88; }
+  #glyphBox { width: 42px; height: 30px; border-radius: 6px; display: flex; align-items: center; justify-content: center; }
+  #glyph { height: 24px; }
+
+  .win { position: absolute; border-radius: 15px; overflow: hidden;
+    box-shadow: 0 0 0 .75px rgba(0,0,0,.18), 0 22px 60px rgba(0,0,0,.22), 0 6px 18px rgba(0,0,0,.12); background: #fff; }
+  .win img { display: block; width: 100%; }
+
+  /* notification banner (macOS) */
+  #notif { position: absolute; right: 24px; top: 58px; width: 610px; border-radius: 24px; padding: 16px 20px 17px 18px;
+    background: rgba(246,246,246,.78); backdrop-filter: blur(40px) saturate(1.8);
+    box-shadow: 0 0 0 .75px rgba(0,0,0,.10), 0 14px 40px rgba(0,0,0,.18); display: flex; gap: 15px; z-index: 60; }
+  #notif img { width: 52px; height: 52px; border-radius: 12px; flex: none; }
+  #notif .t { font-weight: 700; font-size: 19.5px; display: flex; }
+  #notif .t span { margin-left: auto; font-weight: 400; color: #6e6e73; font-size: 18px; }
+  #notif .b { font-size: 19.5px; margin-top: 3px; line-height: 1.3; color: #1d1d1f; }
+
+  /* keystroke overlay, the kind screen recordings use */
+  #keys { position: absolute; left: 50%; top: 610px; transform: translateX(-50%); display: flex; gap: 10px; padding: 16px 22px;
+    border-radius: 18px; background: rgba(30,30,30,.72); backdrop-filter: blur(20px); color: #fff; font-size: 40px; font-weight: 500; z-index: 70; }
+  #keys span { min-width: 54px; text-align: center; }
+
+  /* captions */
+  .cap { position: absolute; left: 96px; bottom: 92px; color: #fff; font-family: -apple-system, "SF Pro Display", system-ui;
+    font-size: 54px; font-weight: 600; letter-spacing: -1.1px; line-height: 1.12; text-shadow: 0 1px 24px rgba(20,40,20,.35); z-index: 80; max-width: 900px; }
+  .cap .dim { color: rgba(255,255,255,.72); }
+
+  #cursor { position: absolute; width: 30px; height: 44px; z-index: 90; }
+
+  /* end card */
+  #end { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100; }
+  #end img { width: 168px; height: 168px; filter: drop-shadow(0 14px 28px rgba(0,0,0,.25)); }
+  #end h1 { font-family: -apple-system, "SF Pro Display", system-ui; font-size: 86px; font-weight: 700; letter-spacing: -2.4px; color: #fff; margin-top: 26px; text-shadow: 0 2px 30px rgba(20,40,20,.3); }
+  #end p { font-size: 32px; color: rgba(255,255,255,.88); margin-top: 8px; text-shadow: 0 1px 18px rgba(20,40,20,.35); }
+  #end .cmd { margin-top: 40px; font-family: "SF Mono", Menlo, monospace; font-size: 29px; color: #f5f5f7; background: rgba(28,28,30,.82);
+    padding: 18px 30px; border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.2); }
+  #end .cmd b { color: #8e8e93; font-weight: 400; margin-right: 14px; }
+  #end .fine { font-size: 24px; color: rgba(255,255,255,.8); margin-top: 26px; }
+</style>
+</head>
+<body>
+<div id="desk">
+ <div id="cam" style="position:absolute;inset:0;transform-origin:0 0;">
+  <div id="wall"></div>
+
+  <div id="menubar">
+    <div class="l"><img class="sym" src="sym-apple.logo.png" style="height:22px;margin-top:-3px"><b style="font-weight:700">Finder</b><span>File</span><span>Edit</span><span>View</span><span>Go</span><span>Window</span><span>Help</span></div>
+    <div class="r">
+      <div id="glyphBox"><img id="glyph" src="menu-bar-glyph.png"></div>
+      <img class="sym" src="sym-switch.2.png"><img class="sym" src="sym-wifi.png"><img class="sym" src="sym-battery.100percent.png" style="height:20px">
+      <img class="sym" src="sym-magnifyingglass.png"><span>Fri 23 Oct&nbsp; 16:20</span>
+    </div>
+  </div>
+
+  <!-- the quick panel (⌥⌘G) -->
+  <div class="win" id="quick" style="left:570px;top:250px;width:780px;border-radius:24px;background:#ececec;">
+    <img id="quickImg" src="quick-0-light.png">
+  </div>
+
+  <!-- the menu bar popover -->
+  <div class="win" id="pop" style="left:1190px;top:44px;width:600px;border-radius:16px;">
+    <img id="popImg" src="idle-popover-light.png">
+  </div>
+
+  <!-- the review window -->
+  <div class="win" id="rev" style="left:860px;top:96px;width:900px;height:900px;border-radius:16px;">
+    <img id="revImg" src="ready-review-ready-light.png">
+  </div>
+
+  <!-- the posted review on GitHub (a real public PR) -->
+  <div class="win" id="gh" style="left:880px;top:80px;width:880px;height:940px;border-radius:14px;">
+    <img id="ghImg" src="gh-review.png">
+  </div>
+
+
+
+  <svg id="cursor" viewBox="0 0 20 30"><path d="M2 1.5 L2 24 L7.4 18.9 L11 27.2 L14.6 25.6 L11.1 17.6 L18.3 17.6 Z" fill="#000" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>
+ </div>
+  <div id="notif"><img src="app-icon.png"><div style="flex:1"><div class="t">The Merge Goblin finished 👺<span>now</span></div>
+    <div class="b">#873 is ready to read — 🔴 1 blocker · 🟠 1 convention · ⚪ 1 nit</div></div></div>
+  <div id="keys"><span>⌥</span><span>⌘</span><span>G</span></div>
+
+  <div class="cap" id="cap1">Three pull requests want<br>your review.</div>
+  <div class="cap" id="cap2">Press ⌥⌘G and type its number.</div>
+  <div class="cap" id="cap3">He reads the diff, your repo's<br>rules and the ticket.</div>
+  <div class="cap" id="cap4">You read it first. Drop what<br>you disagree with.</div>
+  <div class="cap" id="cap5">Then it's one review on GitHub,<br>clearly labelled as his.</div>
+
+
+  <div id="end">
+    <img src="app-icon.png">
+    <h1>Merge Goblin</h1>
+    <p>Code review on the AI subscription you already pay for.</p>
+    <div class="cmd"><b>$</b>brew install --cask Kiril-P/tap/merge-goblin</div>
+    <div class="fine">Free and open source · macOS 14+ · Claude, Codex or Cursor</div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lin = (t, a, b) => clamp((t - a) / (b - a));
+const eo = x => 1 - Math.pow(1 - x, 3);
+const eio = x => x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+const spring = x => x >= 1 ? 1 : 1 - Math.exp(-6 * x) * Math.cos(9 * x);   // gentle overshoot
+const mix = (a, b, k) => a + (b - a) * k;
+function vis(el, o, tf = '') { el.style.opacity = o; el.style.transform = tf; el.style.display = o <= 0.001 ? 'none' : ''; }
+// a caption: fade+rise in, hold, fade out
+function cap(el, t, a, b) { const i = eo(lin(t, a, a + .4)), o = 1 - lin(t, b - .3, b); vis(el, Math.min(i, o), `translateY(${(1 - i) * 18}px)`); }
+function swap(img, src) { if (!img.src.endsWith(src)) img.src = src; }
+
+// cursor path: [time, x, y]
+const PATH = [[0, 1500, 620], [6.6, 1500, 620], [7.25, 1239, 20], [7.5, 1239, 20]];
+function cursorAt(t) {
+  if (t <= PATH[0][0]) return PATH[0];
+  for (let i = 1; i < PATH.length; i++) if (t <= PATH[i][0]) {
+    const [t0, x0, y0] = PATH[i - 1], [t1, x1, y1] = PATH[i]; const k = eio(lin(t, t0, t1));
+    return [t, mix(x0, x1, k), mix(y0, y1, k)];
+  }
+  return PATH[PATH.length - 1];
+}
+
+function render(t) {
+
+  // camera: a slow push in on whatever is in use, like an edited screen recording
+  const CAM = [[0, 1.18, 1490, 0], [1.7, 1.18, 1490, 0], [2.2, 1.28, 960, 330], [6.3, 1.28, 960, 330], [6.6, 1.0, 960, 540],
+               [7.3, 1.0, 960, 540], [7.9, 1.18, 1490, 0], [11.8, 1.18, 1490, 0], [12.3, 1.12, 1310, 546], [16.3, 1.15, 1310, 546],
+               [16.7, 1.1, 1320, 550], [19.6, 1.12, 1320, 560], [20.2, 1.0, 960, 540], [22, 1.0, 960, 540]];
+  let c = CAM[CAM.length - 1];
+  for (let i = 1; i < CAM.length; i++) if (t <= CAM[i][0]) { const a = CAM[i - 1], b = CAM[i], k = eio(lin(t, a[0], b[0]));
+    c = [t, mix(a[1], b[1], k), mix(a[2], b[2], k), mix(a[3], b[3], k)]; break; }
+  const [, z, fx, fy] = c;
+  // keep the focus point where it sits on screen, but never show past the edges
+  let tx = fx - fx * z, ty = fy - fy * z;
+  tx = Math.min(0, Math.max(1920 - 1920 * z, tx)); ty = Math.min(0, Math.max(1080 - 1080 * z, ty));
+  $('cam').style.transform = `translate(${tx}px, ${ty}px) scale(${z})`;
+  // slow drift on the wallpaper so the desktop feels alive
+  $('wall').style.transform = `scale(${1.02 + .015 * lin(t, 0, 22)}) translateX(${-6 * lin(t, 0, 22)}px)`;
+
+  // ⌥⌘G overlay
+  const k = Math.min(eo(lin(t, 1.55, 1.8)), 1 - lin(t, 2.75, 3.0));
+  vis($('keys'), k, `translateX(-50%) scale(${mix(.94, 1, k)})`);
+
+  // quick panel: appears on the shortcut, typing, Review, closes
+  const qIn = spring(lin(t, 1.85, 2.45)), qOut = eio(lin(t, 6.15, 6.45));
+  vis($('quick'), Math.min(eo(lin(t, 1.85, 2.15)), 1 - qOut), `translateY(${(1 - qIn) * -14}px) scale(${mix(.97, 1, qIn) * mix(1, .97, qOut)})`);
+  swap($('quickImg'), t < 3.35 ? 'quick-0-light.png' : t < 3.6 ? 'quick-1-light.png' : t < 3.85 ? 'quick-2-light.png' : 'quick-3-light.png');
+  // the Review button press
+  const press = Math.sin(Math.PI * lin(t, 5.75, 5.95));
+  $('quickImg').style.filter = press > 0 ? `brightness(${1 - .05 * press})` : '';
+
+  // popover: open at the start (waiting for you), closes for the shortcut, reopens on the click
+  const clickT = 7.35;
+  const open0 = 1 - eio(lin(t, 1.75, 1.95));
+  const pIn = spring(lin(t, clickT + .05, clickT + .5)), pOut = eio(lin(t, 11.85, 12.1));
+  const p2 = Math.min(eo(lin(t, clickT + .05, clickT + .25)), 1 - pOut);
+  $('glyphBox').style.background = (t < 1.9 || (t >= clickT && t < 12.0)) ? 'rgba(0,0,0,.12)' : 'transparent';
+  if (t < 2) vis($('pop'), open0, `translateY(${(1 - open0) * -8}px)`);
+  else vis($('pop'), p2, `translateY(${(1 - pIn) * -10}px)`);
+  swap($('popImg'), t < 2 ? 'idle-popover-light.png' : t < 8.4 ? 'fetching-popover-light.png' : t < 9.3 ? 'reading-popover-light.png' : t < 10.45 ? 'reviewing-popover-light.png' : 'ready-popover-light.png');
+
+  // the notification when it is ready
+  const nIn = spring(lin(t, 10.45, 11.0)), nOut = eio(lin(t, 11.75, 12.05));
+  vis($('notif'), Math.min(eo(lin(t, 10.45, 10.7)), 1 - nOut), `translateX(${(1 - nIn) * 560 + nOut * 560}px)`);
+
+  // review window
+  const rIn = spring(lin(t, 12.05, 12.65)), rOut = eio(lin(t, 16.2, 16.5));
+  vis($('rev'), Math.min(eo(lin(t, 12.05, 12.3)), 1 - rOut), `translateY(${(1 - rIn) * 30}px) scale(${mix(.975, 1, rIn)})`);
+  const scroll = 0;
+  $('revImg').style.transform = `translateY(${-scroll}px)`;
+
+  // GitHub
+  const gIn = spring(lin(t, 16.45, 17.05)), gOut = eio(lin(t, 19.6, 19.9));
+  vis($('gh'), Math.min(eo(lin(t, 16.45, 16.7)), 1 - gOut), `translateY(${(1 - gIn) * 30}px) scale(${mix(.975, 1, gIn)})`);
+  const gs = eio(lin(t, 17.5, 19.2)) * 440;
+  $('ghImg').style.transform = `translateY(${-gs}px)`;
+
+  // captions
+  cap($('cap1'), t, .2, 1.85);
+  cap($('cap2'), t, 2.0, 6.6);
+  cap($('cap3'), t, 7.6, 11.9);
+  cap($('cap4'), t, 12.35, 16.3);
+  cap($('cap5'), t, 16.75, 19.7);
+
+  // cursor: only for the menu bar click
+  const [, cx, cy] = cursorAt(t);
+  const cv = Math.min(lin(t, 6.45, 6.7), 1 - lin(t, 7.7, 7.95));
+  const cs = 1 - .12 * Math.sin(Math.PI * lin(t, clickT - .08, clickT + .1));
+  vis($('cursor'), cv, `scale(${cs})`);
+  $('cursor').style.left = cx + 'px'; $('cursor').style.top = cy + 'px';
+
+  // end card: the desktop darkens a touch, the icon and the words arrive
+  const e = eo(lin(t, 19.85, 20.4));
+  vis($('end'), e);
+  $('wall').style.filter = `brightness(${1 - .16 * e})`;
+  $('menubar').style.opacity = 1 - .0 * e;
+  const ei = $('end').children;
+  ei[0].style.transform = `translateY(${(1 - spring(lin(t, 19.85, 20.5))) * 24}px)`;
+  [1, 2, 3, 4].forEach((n, i) => { const a = eo(lin(t, 20.0 + i * .12, 20.45 + i * .12)); ei[n].style.opacity = a; ei[n].style.transform = `translateY(${(1 - a) * 14}px)`; });
+}
+
+window.render = render;
+const preload = ['quick-1-light.png', 'quick-2-light.png', 'quick-3-light.png', 'reading-popover-light.png', 'reviewing-popover-light.png', 'ready-popover-light.png'];
+window.assetsReady = Promise.all([document.fonts.ready,
+  ...preload.map(s => new Promise(r => { const i = new Image(); i.onload = i.onerror = r; i.src = s; })),
+  ...[...document.images].map(i => i.complete ? Promise.resolve() : new Promise(r => { i.onload = i.onerror = r; }))]);
+render(parseFloat(new URLSearchParams(location.search).get('t') || '0'));
+</script>
+</body>
+</html>

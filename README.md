@@ -1,29 +1,45 @@
-![The Merge Goblin guarding the merge button](design/hero.png)
-
 # The Merge Goblin
 
-![An actual Merge Goblin inline review, with author anonymized](docs/media/merge-goblin-inline-review.png)
+**An AI code reviewer that lives in your Mac's menu bar.** He reviews the pull requests that
+ask for your review, on the Claude, ChatGPT or Cursor subscription you already pay for.
 
-**He guards the merge button — reviewing the pull requests that ask for your review, on the AI subscription you already pay for.**
+![Merge Goblin in 22 seconds: ⌥⌘G, type a PR number, he reviews it, you read it, and one labelled review lands on GitHub](docs/media/merge-goblin-demo.gif)
 
-He watches for PRs where you're a requested reviewer, reads the repo's *own* review
-guidelines, and posts one clearly-labelled automated review with line-anchored comments —
-plus a second comment answering "does this actually do what the ticket asked?"
+<sub>▶ [The same video with sound (22 s, mp4)](docs/media/merge-goblin-demo.mp4)</sub>
 
-> ### The Goblin refuses the merge.
-> `claude/sonnet` · inspected `aa309fb` — 12 files, +1976 −296 against `main`
->
-> **🔴 1 blocker · 🟠 2 convention**
+```bash
+brew install --cask Kiril-P/tap/merge-goblin
+```
 
-He is a native Mac menu bar app and a CLI, running on your Mac, on your schedule, on
-your account — nothing is sent anywhere except to the AI CLI you already use.
+**Contents:** [What he does](#what-he-does) · [Install](#install) · [Use](#use) ·
+[What he posts](#what-he-posts) · [Running it as a team](#running-it-as-a-team) ·
+[Configuration](#configuration) · [How it works](#how-it-works) · [Development](#development)
 
-## Review any PR by number
+## What he does
 
-Press **⌥⌘G**, type `2456`, hit return. That's it — a Goblin goes off, reads the diff and
-the repo's own rules, and comes back with a **preview** of the review. You read it, drop or
-reword anything you disagree with, and only then does it post. Nothing reaches GitHub until
-you say so.
+- **Reviews any PR you name.** Press **⌥⌘G**, type `2456`, hit return. You get a preview,
+  drop or reword anything you disagree with, and only then does it post.
+- **Watches on his own.** On a schedule, he picks up PRs where you're a requested reviewer
+  and reviews them in the background.
+- **Posts one review, not twenty notifications.** Findings are grouped by severity and
+  anchored to the exact lines, plus a check of whether the PR does what its ticket asked.
+- **Follows your repo's rules.** If the repo has review guidelines, he reads them. No config.
+- **Uses your subscription, not an API key.** `claude`, `codex` or `cursor-agent`, whichever
+  you're signed into. Switching is one click.
+- **Never approves, never blocks.** Every review says it's automated and advisory.
+- **Never double-reviews.** Several teammates can run him; exactly one reviews each PR.
+- **Has a real off switch.** One toggle, plus snooze and a daily spend cap.
+
+He is a native Mac menu bar app and a CLI, running on your Mac, on your schedule, on your
+account. Nothing is sent anywhere except to the AI CLI you already use.
+
+### Why
+
+Hosted review bots are per-seat and send your code to another vendor. Meanwhile your team
+already has Claude, ChatGPT and Cursor seats sitting there. The Goblin drives whichever of
+those you're signed into, so a review costs nothing beyond what you already pay.
+
+### Review any PR by number
 
 ```bash
 goblin review 2456                     # preview first (the default for manual reviews)
@@ -38,22 +54,6 @@ A bare number resolves against the repo you are standing in, your only watched r
 the last one you used — and asks when it genuinely can't tell. Copy a PR link anywhere and
 the menu bar app offers to review it. `goblin://review/acme/widgets/2456` links open the
 same preview (they can never post on their own).
-
----
-
-## Why
-
-Hosted review bots are per-seat and send your code to another vendor. Meanwhile your team
-already has Claude, ChatGPT and Cursor seats sitting there. The Goblin drives whichever of those
-CLIs you're signed into, so a review costs nothing beyond the subscription you're already
-paying for — and switching provider is one click.
-
-- **Your subscription, not an API key.** `claude`, `codex` or `cursor-agent`, whichever is installed.
-- **One review, not twenty notifications.** All findings in a single grouped review.
-- **Reads your repo's rules.** If the repo has review guidelines, he follows them. No config needed.
-- **Never approves, never blocks.** Advisory by default, and it says so in every comment.
-- **Never double-reviews.** Several teammates can run him; exactly one reviews each PR.
-- **A real off switch.** One toggle in the panel, plus snooze and a daily spend cap.
 
 ## Install
 
@@ -193,6 +193,9 @@ His verdict line tells you how bad it is before you read a word:
 | approved (opt-in) | *The Goblin approves this offering.* |
 
 Plus inline comments on the exact lines, and an intent check against the linked issue.
+A real one, with the author anonymised:
+
+![A real Merge Goblin inline comment with a suggested change](docs/media/merge-goblin-inline-review.png)
 
 ## How it decides what to look for
 
