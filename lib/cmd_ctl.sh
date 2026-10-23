@@ -28,6 +28,14 @@ cmd_ctl() {
       status_set '{"state":"idle","pausedReason":"","activity":""}'
       echo "resumed" ;;
 
+    dismiss-failures)
+      # "I've seen it." Failures and stuck PRs up to now stop turning the icon red; a
+      # new failure brings the warning back. Nothing is retried or forgotten: stuck PRs
+      # still get their next try, and the log and Recent keep every failure.
+      cfg_set --argjson t "$(now_epoch)" '.failuresDismissedAt = $t'
+      status_set '{}'
+      echo "failure warning dismissed until something new fails" ;;
+
     toggle|toggle-power)
       if agent_disabled || [ "$(cfg_get '.enabled' true)" != "true" ]; then cmd_ctl on; else cmd_ctl off; fi ;;
 

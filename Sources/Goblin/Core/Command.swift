@@ -163,6 +163,7 @@ enum Command: Equatable {
     case pause
     case resume
     case snooze(kind: SnoozeKind)
+    case dismissFailures                 // "seen it": quiet until something new fails
 
     // reviewing
     case reviewNow
@@ -263,6 +264,8 @@ enum Command: Equatable {
             return .cli(argv: ["pause"], timeout: .mutation, mutating: true, json: false)
         case .resume:
             return .cli(argv: ["resume"], timeout: .mutation, mutating: true, json: false)
+        case .dismissFailures:
+            return .cli(argv: ["dismiss-failures"], timeout: .mutation, mutating: true, json: false)
         case .snooze(let kind):
             let verb: String
             switch kind {

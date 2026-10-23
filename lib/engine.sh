@@ -494,7 +494,15 @@ engine_review_pr() {
     log "  #$2: could not get the repo lock for $slug"
     return 1
   fi
+  # A Mac that idles to sleep mid-review drops the model's connection, and the
+  # review then dies as a timeout hours later. Hold it awake for the review only;
+  # -w ends the hold if this shell is killed.
+  local caf=""
+  if command -v caffeinate >/dev/null 2>&1; then
+    caffeinate -i -w $$ >/dev/null 2>&1 & caf=$!
+  fi
   engine_review_pr_locked "$@"; rc=$?
+  [ -n "$caf" ] && kill "$caf" 2>/dev/null
   repo_lock_release
   return $rc
 }

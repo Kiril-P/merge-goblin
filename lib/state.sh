@@ -14,6 +14,10 @@ compute_stats() {
   # A rolling 24 hours, not midnight: a failure at 23:50 must not stop counting
   # as recent ten minutes later.
   day="$(( $(now_epoch) - 86400 ))"
+  # failures someone dismissed in the panel (goblin dismiss-failures) are not recent
+  local dis; dis="$(cfg_get '.failuresDismissedAt' 0)"
+  case "$dis" in ''|*[!0-9]*) dis=0 ;; esac
+  [ "$dis" -ge "$day" ] && day=$((dis + 1))
   data="$(cat "$EVENTS" 2>/dev/null || true)"
   out="$(printf '%s' "$data" | jq -s --argjson mid "$mid" --argjson wk "$wk" --argjson day "$day" '
     {

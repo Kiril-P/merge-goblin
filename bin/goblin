@@ -65,6 +65,7 @@ $GOBLIN_EMOJI $GOBLIN_NAME v$GOBLIN_VERSION — $GOBLIN_TAGLINE
           [--plan] [--force]       --plan = dry run (posts nothing)
   goblin on | off                     master switch (off survives reboot)
   goblin pause | resume | toggle      temporary stop (agent stays scheduled)
+  goblin dismiss-failures             hide the failure warning until something new fails
   goblin snooze 1h|tomorrow|<secs>|clear
   goblin budget [show|off|<usd>]      daily spend cap
   goblin repos [list|add SLUG|rm SLUG|enable SLUG|disable SLUG]
@@ -115,7 +116,7 @@ case "$cmd" in
   version)  echo "$GOBLIN_NAME $GOBLIN_VERSION" ;;
   help|-h|--help) usage ;;
   # everything else is a small control verb
-  on|off|pause|resume|toggle|toggle-power|snooze|budget|repos|repo|provider|fleet|config|log|agent|fix-account|\
+  on|off|pause|resume|dismiss-failures|toggle|toggle-power|snooze|budget|repos|repo|provider|fleet|config|log|agent|fix-account|\
   run-now|snooze1h|snoozetomorrow|clearsnooze|budgetoff|budget2|budget5|budget10|set-budget|disable-agent|enable-agent)
             . "$LIB_DIR/cmd_ctl.sh";     cmd_ctl "$cmd" "$@" ;;
   *)        echo "$GOBLIN_SLUG: unknown command '$cmd'" >&2; usage >&2; exit 2 ;;
