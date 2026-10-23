@@ -1,0 +1,6 @@
+ui/
+frames/
+stills/
+*.png
+music.wav
+node_modules/

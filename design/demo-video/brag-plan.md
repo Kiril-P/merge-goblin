@@ -1,29 +1,27 @@
-# Merge Goblin — brag plan
+# Merge Goblin — brag plan (v2: the real app, on a real-looking Mac)
 
-## Answers
-- **What is it:** a Mac menu bar app that reviews GitHub pull requests with the AI CLI you already pay for (Claude, Codex or Cursor) and posts one labelled review with line comments.
-- **For whom:** developers who get asked to review PRs; teams that already have AI seats and don't want a per-seat review bot.
-- **What sets it apart:** runs on your Mac and your subscription; reads the repo's own review rules; preview before it posts; never approves or blocks; one review, not twenty notifications.
-- **Funniest true claim:** its verdict lines. "The Goblin refuses the merge." / "Suspiciously clean. Proceed."
-- **Visual hook:** the hero art. The goblin is leaning on an empty glowing button. We put "Merge pull request" on it, then the goblin's answer.
-- **Real UI to show:** the popover (rebuilt in HTML from PopoverView.swift / Theme.swift, dark mode), ⌥⌘G review field, job phases (real strings from Models.swift), the posted review (verdict header from lib/brand.sh, the real inline-review screenshot from docs/media).
-- **Tone:** default, leaning polished. Dark, green glow, playful copy, clean motion.
-- **Share caption:** a goblin now guards my merge button.
+## What changed from v1
+v1 rebuilt the app in HTML on a dark, neon-green backdrop with glowing AI art. It read as "AI made this".
+v2 shows the product doing its job, the way an edited screen recording does:
+
+- Every app screen is the real SwiftUI view, rendered by the app's own `--snapshot` mode from the
+  demo sandbox (`scripts/demo-home.sh`), in each state: idle, fetching, reading, reviewing, ready to read.
+  The ⌥⌘G quick panel is the real `ReviewField` as it is typed into.
+- The GitHub scene is a screenshot of a real public review: Merge Goblin on Kiril-P/merge-goblin#1.
+- Light mode on a plain Mac desktop: an original wallpaper (generated once, calm colour fields, no glow),
+  a light menu bar drawn with real SF Symbols, and a macOS notification using the engine's real wording.
+- Camera push-ins on whatever is in use, plain white captions, the mascot only as the app icon.
 
 ## Privacy
-The live popover shows private work PRs. All PRs in the video are fictional (`acme/widgets`, invented titles). The inline review is the public screenshot from this repo (reviewer avatar already blurred).
+PRs and people are the demo sandbox's invented ones (acme/*, grace, linus, margaret). The only real
+review shown is public, on this repo.
 
-## Identity
-- Background #07110b → #0b1f13, green glow #5cd185 (Theme.accent dark), purple hood #6b2a8f, system blue #0a84ff for "reviewing", orange #ff9f0a.
-- Type: SF Pro (system-ui), SF Mono for code. Popover 400×580 scaled 1.6×.
-
-## Storyboard (20.0 s, 1920×1080, 30 fps)
-| # | t | Scene | On screen | Sound |
-|---|---|---|---|---|
-| 1 | 0.0–3.4 | Hook | Hero art. "Merge pull request" types onto the glowing button, a cursor moves to click it, the button flips red: "👺 Not so fast." | music in; soft click; low thunk on flip |
-| 2 | 3.4–7.4 | Reveal | Mac menu bar slides down, goblin glyph, popover drops open (on duty, Waiting for you: 3 PRs). Left title: "Merge Goblin" / "An AI code reviewer in your menu bar." | whoosh, pop |
-| 3 | 7.4–12.0 | Review any PR | "⌥⌘G" keycap, "2456" typed, Review pressed; job row steps Fetching the diff → Reading the code → Reviewing → Ready to read. Left: "Type a PR number." / chips claude · codex · cursor "on the AI you already pay for". | key ticks, chime on Ready |
-| 4 | 12.0–16.6 | The review | GitHub review card: badge, "The Goblin refuses the merge.", meta line, 🔴 1 blocker · 🟠 2 convention; inline comment slides in (real screenshot). Left: "One review. Line by line. By your repo's own rules." | swell |
-| 5 | 16.6–20.0 | Outro | Idle-wave goblin, "Merge Goblin", `brew install --cask Kiril-P/tap/merge-goblin`, github.com/Kiril-P/merge-goblin · free & open source · macOS 14+ | resolve chord |
-
-Sum: 3.4 + 4.0 + 4.6 + 4.6 + 3.4 = 20.0 s.
+## Storyboard (22.0 s, 1920×1080, 30 fps; the Mac is 1280×720 pt drawn at 1.5×)
+| t | On screen | Caption |
+|---|---|---|
+| 0.0–1.9 | Popover open, pushed in: Waiting for you 3 | Three pull requests want your review. |
+| 1.9–6.5 | Popover closes; ⌥⌘G keystroke; quick panel; 8, 7, 3 typed; it resolves to the PR; Review | Press ⌥⌘G and type its number. |
+| 6.5–12.0 | Cursor clicks the menu bar goblin; popover shows the review: fetching → reading → reviewing → ready; notification "The Merge Goblin finished 👺" | He reads the diff, your repo's rules and the ticket. |
+| 12.0–16.5 | Review window: summary, intent check, findings, Discard / Post to GitHub | You read it first. Drop what you disagree with. |
+| 16.5–19.8 | The real review on GitHub, scrolling to the suggested change | Then it's one review on GitHub, clearly labelled as his. |
+| 19.8–22.0 | App icon, Merge Goblin, the brew line | Code review on the AI subscription you already pay for. |

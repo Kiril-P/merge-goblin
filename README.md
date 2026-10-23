@@ -3,9 +3,9 @@
 **An AI code reviewer that lives in your Mac's menu bar.** He reviews the pull requests that
 ask for your review, on the Claude, ChatGPT or Cursor subscription you already pay for.
 
-![Merge Goblin in 20 seconds: type a PR number, he reviews it, and a single labelled review with line comments lands on GitHub](docs/media/merge-goblin-demo.gif)
+![Merge Goblin in 22 seconds: ⌥⌘G, type a PR number, he reviews it, you read it, and one labelled review lands on GitHub](docs/media/merge-goblin-demo.gif)
 
-<sub>▶ [The same video with sound (20 s, mp4)](docs/media/merge-goblin-demo.mp4)</sub>
+<sub>▶ [The same video with sound (22 s, mp4)](docs/media/merge-goblin-demo.mp4)</sub>
 
 ```bash
 brew install --cask Kiril-P/tap/merge-goblin

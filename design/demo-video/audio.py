@@ -3,7 +3,7 @@
 import numpy as np, wave
 
 SR = 48000
-DUR = 20.0
+DUR = 22.0
 N = int(SR * DUR)
 BEAT = 60 / 96
 BAR = BEAT * 4
@@ -54,12 +54,12 @@ def pluck(f, d, dec, kind="tri"):
 # A minor: Am F C G | Am F G Am
 CH = {"Am": [57, 60, 64], "F": [53, 57, 60], "C": [55, 60, 64], "G": [55, 59, 62]}
 ROOT = {"Am": 45, "F": 41, "C": 48, "G": 43}
-prog = ["Am", "F", "C", "G", "Am", "F", "G", "Am"]
+prog = ["Am", "F", "C", "G", "Am", "F", "C", "G", "Am"]
 
 # --- pad (detuned saws, soft, wide) ---
 pad_l = np.zeros(N); pad_r = np.zeros(N)
 for b, c in enumerate(prog):
-    at = b * BAR; d = BAR + 0.6 if b < 7 else DUR - at
+    at = b * BAR; d = BAR + 0.6 if b < 8 else DUR - at
     for m in CH[c]:
         f = hz(m)
         e = env(d, 0.35, 0.6)
@@ -81,10 +81,10 @@ for b, c in enumerate(prog):
     tones = [m + 12 for m in CH[c]] + [CH[c][0] + 24]
     for k in range(8):
         at = b * BAR + k * step
-        if at > 19.2: break
+        if at > 21.2: break
         m = tones[pattern[k] if k != 6 else 3]
         g = 0.10 if at < 2.5 else 0.10
-        if at > 17.5: g *= max(0.0, 1 - (at - 17.5) / 2.0)
+        if at > 19.8: g *= max(0.0, 1 - (at - 19.8) / 2.0)
         add2(pluck(hz(m), 0.5, 0.16), at, g, pan=0.25 if k % 2 else -0.25)
 
 # --- drums + bass from bar 2 until the outro ---
@@ -98,7 +98,7 @@ def snare():
     tt = t_(0.25); n = rng.standard_normal(len(tt))
     return (fft_hp(n, 1500) * 0.6 + np.sin(2 * np.pi * 190 * tt) * 0.4) * np.exp(-tt / 0.07)
 K, H, S = kick(), hat(), snare()
-for b in range(1, 7):
+for b in range(1, 8):
     for beat in range(4):
         at = b * BAR + beat * BEAT
         add2(K, at, 0.26 if beat in (0, 2) else 0.12)
@@ -111,7 +111,7 @@ for b in range(1, 7):
         x = np.tanh(1.6 * np.sin(2 * np.pi * f * tt)) * np.exp(-tt / 0.22) * np.minimum(1, tt / 0.005)
         add2(x, at, 0.12 if k % 2 == 0 else 0.07)
 # final low A under the outro
-tt = t_(DUR - 7 * BAR); add2(np.sin(2 * np.pi * hz(33) * tt) * env(DUR - 7 * BAR, 0.05, 1.5), 7 * BAR, 0.10)
+tt = t_(DUR - 8 * BAR); add2(np.sin(2 * np.pi * hz(33) * tt) * env(DUR - 8 * BAR, 0.05, 1.5), 8 * BAR, 0.10)
 
 # --- effects, in A minor ---
 def tick(g=1.0):
@@ -128,22 +128,18 @@ def thunk():
     tt = t_(0.6); f = 55 + 60 * np.exp(-tt / 0.06)
     return np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-tt / 0.25)
 
-for i in range(18): add2(tick(), 0.25 + i * (0.8 / 18), 0.05, pan=0.1)   # typing on the button
-add2(click(), 1.9, 0.16)                                                 # the click
-add2(thunk(), 2.05, 0.36)                                                 # refused
-add2(pluck(hz(64), 0.4, 0.12, "sine"), 2.08, 0.10); add2(pluck(hz(57), 0.6, 0.2, "sine"), 2.24, 0.10)
-add2(whoosh(0.5), 3.15, 0.05)
-add2(click(), 3.95, 0.12)                                                # menu bar icon
-add2(bell(81, 0.5, 0.12), 4.05, 0.06)                                    # popover opens
-for i, at in enumerate([7.6, 7.69, 7.78]): add2(click(), at, 0.09)       # ⌥⌘G
-for i in range(4): add2(tick(), 7.95 + i * 0.125, 0.07)                  # 2456
-add2(click(), 8.6, 0.13)                                                 # Review
-add2(bell(76, 0.6, 0.15), 9.55, 0.035); add2(bell(79, 0.6, 0.15), 10.35, 0.035)
-add2(bell(81, 1.4, 0.5), 11.25, 0.07); add2(bell(88, 1.4, 0.5), 11.32, 0.05)   # ready to read
-add2(whoosh(0.45), 11.95, 0.045)
-add2(whoosh(0.4), 14.0, 0.035)
-add2(whoosh(0.5), 16.35, 0.045)
-for i, m in enumerate([69, 72, 76, 81]): add2(bell(m, 1.8, 0.7), 16.8 + i * 0.09, 0.045)
+for at in (1.6, 1.66, 1.72): add2(click(), at, 0.08)                     # option, command, G
+add2(bell(81, 0.5, 0.12), 1.9, 0.05)                                     # the quick panel
+for at in (3.35, 3.6, 3.85): add2(tick(), at, 0.08)                      # 8 7 3
+add2(click(), 5.85, 0.12)                                                # Review
+add2(whoosh(0.35), 6.15, 0.03)
+add2(click(), 7.35, 0.11)                                                # the menu bar goblin
+add2(bell(81, 0.5, 0.12), 7.4, 0.05)
+add2(bell(76, 0.6, 0.15), 8.4, 0.03); add2(bell(79, 0.6, 0.15), 9.3, 0.03)
+add2(bell(81, 1.4, 0.5), 10.45, 0.065); add2(bell(88, 1.4, 0.5), 10.53, 0.045)   # finished
+add2(whoosh(0.4), 11.95, 0.03)
+add2(whoosh(0.4), 16.35, 0.03)
+for i, m in enumerate([69, 72, 76, 81]): add2(bell(m, 1.8, 0.7), 19.95 + i * 0.09, 0.04)
 
 # --- mix: shared room, gentle glue, master fade ---
 def reverb(x):
