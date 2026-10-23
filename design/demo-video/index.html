@@ -1,0 +1,386 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; background: #050b07; }
+  body { font-family: -apple-system, "SF Pro Display", system-ui, sans-serif; color: #f2f5f3; -webkit-font-smoothing: antialiased; }
+  .mono { font-family: "SF Mono", ui-monospace, Menlo, monospace; }
+  #stage { position: absolute; inset: 0; overflow: hidden;
+    background: radial-gradient(1200px 800px at 75% 45%, #0f2a18 0%, #07130c 55%, #040906 100%); }
+  .layer { position: absolute; inset: 0; will-change: transform, opacity; }
+  .abs { position: absolute; }
+
+  /* scene 1 */
+  #hero { position: absolute; left: -700px; top: 60px; width: 2560px; height: 960px; transform-origin: 1450px 520px; }
+  #hero img { width: 100%; height: 100%; display: block; -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 12%, #000 86%, transparent 100%); }
+  #btnText { position: absolute; left: 1560px; top: 575px; width: 880px; height: 330px;
+    display: flex; align-items: center; justify-content: center; text-align: center;
+    font-weight: 700; font-size: 76px; letter-spacing: -1px; color: #eafff0;
+    text-shadow: 0 0 24px rgba(10,60,25,.9), 0 2px 0 rgba(0,40,15,.6); white-space: nowrap; }
+  #btnRed { position: absolute; left: 1550px; top: 515px; width: 900px; height: 360px; border-radius: 120px;
+    background: radial-gradient(closest-side, rgba(255,60,50,.95), rgba(255,40,40,.55) 70%, rgba(255,40,40,0));
+    mix-blend-mode: hue; }
+  #cursor { position: absolute; width: 46px; height: 46px; }
+  .caret { display: inline-block; width: 5px; height: 0.9em; background: #eafff0; margin-left: 6px; vertical-align: -0.08em; }
+
+  /* menu bar */
+  #menubar { position: absolute; left: 0; right: 0; top: 0; height: 52px;
+    background: rgba(28,30,29,.72); backdrop-filter: blur(20px); border-bottom: 1px solid rgba(255,255,255,.08);
+    display: flex; align-items: center; padding: 0 28px; font-size: 21px; gap: 34px; color: #e9ece9; }
+  #menubar .right { margin-left: auto; display: flex; gap: 30px; align-items: center; }
+  #glyph { width: 34px; height: 34px; filter: invert(1); }
+  #glyphWrap { position: relative; width: 50px; height: 40px; display: flex; align-items: center; justify-content: center; border-radius: 8px; }
+
+  /* popover: the real one is 400×580, drawn here at 1.6× */
+  #pop { position: absolute; left: 1250px; top: 72px; width: 400px; height: 580px; transform-origin: 400px 0;
+    background: #262728; border-radius: 14px; border: 0.6px solid rgba(255,255,255,.14);
+    box-shadow: 0 30px 80px rgba(0,0,0,.6), 0 0 0 0.5px rgba(0,0,0,.8); overflow: hidden; font-size: 12px; color: #ececec; }
+  #pop .hdr { display: flex; align-items: center; gap: 10px; padding: 11px 14px; position: relative; }
+  #pop .hdrTint { position: absolute; inset: 0; }
+  #pop .avatar { width: 34px; height: 34px; border-radius: 7.5px; position: relative; }
+  #pop .name { font-weight: 700; font-size: 14px; position: relative; }
+  #pop .ident { font-size: 11px; color: #9c9c9c; position: relative; }
+  #pop .pill { margin-left: auto; position: relative; display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 99px; font-weight: 600; font-size: 12px; }
+  #pop .dot { width: 8px; height: 8px; border-radius: 50%; position: relative; }
+  #pop .ring { position: absolute; left: -0px; top: 0; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid; }
+  #pop .div { height: 1px; background: rgba(255,255,255,.08); }
+  #pop .body { padding: 14px; display: flex; flex-direction: column; gap: 14px; }
+  .field { border-radius: 12px; border: 1.2px solid rgba(92,209,133,.55); background: rgba(255,255,255,.035); padding: 8px; display: flex; align-items: center; gap: 8px; }
+  .repoChip { background: rgba(92,209,133,.14); color: #5cd185; font-weight: 600; padding: 5px 8px; border-radius: 7px; display: flex; gap: 6px; align-items: center; font-size: 12px; }
+  .hash { color: #bbb; font-weight: 700; }
+  .ftext { flex: 1; font-size: 13px; color: #f2f2f2; white-space: nowrap; }
+  .ph { color: #6f6f6f; }
+  .revBtn { padding: 6px 11px; border-radius: 8px; font-weight: 600; font-size: 12.5px; }
+  .optRow { display: flex; align-items: center; margin-top: -6px; }
+  .chipG { color: #5cd185; background: rgba(92,209,133,.14); padding: 4px 9px; border-radius: 99px; font-weight: 600; font-size: 11.5px; }
+  .opts { margin-left: auto; color: #9a9a9a; font-size: 12px; }
+  .secLabel { font-size: 11px; font-weight: 600; color: #8d8d8d; text-transform: uppercase; letter-spacing: .4px; margin-bottom: -4px; }
+  .card { border-radius: 12px; background: rgba(255,255,255,.055); border: 0.5px solid rgba(255,255,255,.08); padding: 11px; display: flex; gap: 10px; align-items: flex-start; position: relative; overflow: hidden; }
+  .card .bar { position: absolute; left: 0; top: 0; bottom: 0; width: 3px; }
+  .jobIcon { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; flex: none; }
+  .jt { font-weight: 600; font-size: 13px; }
+  .js { font-size: 11.5px; color: #9a9a9a; margin-top: 2px; }
+  .jp { font-size: 11.5px; color: #a8a8a8; margin-top: 3px; display: flex; gap: 6px; align-items: center; }
+  .prog { height: 3px; border-radius: 3px; background: rgba(255,255,255,.08); margin-top: 7px; overflow: hidden; }
+  .prog i { display: block; height: 100%; border-radius: 3px; }
+  .tabs { display: flex; background: rgba(255,255,255,.06); border-radius: 9px; padding: 3px; position: relative; }
+  .tabs div { flex: 1; text-align: center; padding: 6px 0; font-size: 12.5px; font-weight: 600; color: #9a9a9a; position: relative; z-index: 1; }
+  .tabs .sel { color: #fff; }
+  .tabs .glide { position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 3px); background: #161616; border-radius: 7px; z-index: 0; }
+  .count { background: rgba(92,209,133,.18); color: #5cd185; border-radius: 99px; padding: 0 6px; margin-left: 5px; font-size: 11px; }
+  .qrow { display: flex; gap: 8px; padding: 7px 4px; align-items: flex-start; }
+  .qrow .ic { color: #8f8f8f; width: 18px; font-size: 13px; text-align: center; }
+  .qt { font-weight: 500; font-size: 12.5px; }
+  .qs { font-size: 11px; color: #8f8f8f; margin-top: 2px; }
+  .foot { position: absolute; left: 0; right: 0; bottom: 0; height: 40px; border-top: 1px solid rgba(255,255,255,.08); display: flex; align-items: center; padding: 0 12px; gap: 14px; color: #bdbdbd; font-size: 12px; background: #262728; }
+
+  /* left copy */
+  .kicker { font-size: 34px; color: #5cd185; font-weight: 600; letter-spacing: .2px; }
+  .big { font-size: 112px; font-weight: 800; letter-spacing: -3.5px; line-height: 1.0; }
+  .mid { font-size: 58px; font-weight: 700; letter-spacing: -1.6px; line-height: 1.12; }
+  .sub { font-size: 36px; color: #b9c7bd; line-height: 1.35; font-weight: 500; }
+  .key { display: inline-flex; align-items: center; justify-content: center; min-width: 84px; height: 84px; padding: 0 18px; border-radius: 18px;
+    background: linear-gradient(#2c2f2d, #1c1e1d); border: 1.5px solid rgba(255,255,255,.16); box-shadow: 0 6px 0 #0c0d0c, 0 10px 30px rgba(0,0,0,.4);
+    font-size: 44px; font-weight: 600; color: #f3f3f3; margin-right: 14px; }
+  .prov { display: inline-flex; align-items: center; gap: 10px; padding: 10px 22px; border-radius: 99px; font-size: 30px; font-weight: 600;
+    background: rgba(92,209,133,.12); color: #8ee2aa; border: 1px solid rgba(92,209,133,.3); margin-right: 12px; }
+
+  /* github review */
+  .gh { position: absolute; background: #fff; color: #1f2328; border-radius: 16px; border: 1px solid #d1d9e0; box-shadow: 0 30px 80px rgba(0,0,0,.55); font-size: 20px; }
+  .gh .head { padding: 14px 18px; background: #f6f8fa; border-bottom: 1px solid #d1d9e0; border-radius: 12px 12px 0 0; display: flex; gap: 10px; align-items: center; font-size: 20px; color: #59636e; border-radius: 16px 16px 0 0; }
+  .gh .av { width: 38px; height: 38px; border-radius: 50%; background: #c9d1d9; }
+  .gh .inner { padding: 26px 32px 28px; }
+  .badge { display: inline-flex; font-size: 19px; font-weight: 600; border-radius: 4px; overflow: hidden; }
+  .badge span:first-child { background: #1b3d24; color: #fff; padding: 6px 12px; }
+  .badge span:last-child { background: #2f6f3e; color: #fff; padding: 6px 12px; }
+  .gh h3 { font-size: 46px; margin: 22px 0 14px; letter-spacing: -.3px; }
+  .gh code { font-family: "SF Mono", Menlo, monospace; font-size: 19px; background: #eff1f3; padding: 2px 6px; border-radius: 5px; }
+  .gh .meta { color: #59636e; font-size: 22px; }
+  .gh .counts { font-size: 30px; font-weight: 700; margin-top: 20px; }
+  .gh .rule { height: 1px; background: #d1d9e0; margin: 18px 0 12px; }
+  .gh .fine { font-size: 18px; color: #59636e; line-height: 1.5; }
+  #inline { position: absolute; width: 1010px; border-radius: 14px; box-shadow: 0 30px 90px rgba(0,0,0,.6); border: 1px solid #d1d9e0; }
+
+  /* outro */
+  .cmd { display: inline-flex; align-items: center; gap: 18px; font-size: 34px; padding: 22px 32px; border-radius: 16px;
+    background: rgba(255,255,255,.05); border: 1px solid rgba(92,209,133,.35); color: #e8f5ec; }
+  .cmd .pr { color: #5cd185; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="glow" class="layer"></div>
+
+  <!-- 1 hook -->
+  <div id="s1" class="layer">
+    <div id="hero">
+      <img src="hero.png">
+      <div id="btnRed"></div>
+      <div id="btnText"></div>
+    </div>
+    <svg id="cursor" viewBox="0 0 24 24"><path d="M4 2 L4 20 L9 15.5 L12.5 22.5 L15.5 21 L12 14.3 L18.5 14.3 Z" fill="#fff" stroke="#000" stroke-width="1.3" stroke-linejoin="round"/></svg>
+  </div>
+
+  <!-- shared: menu bar + popover (scenes 2–3) -->
+  <div id="s23" class="layer">
+    <div id="menubar">
+      <b style="font-weight:700"></b><span style="font-weight:700">Finder</span><span>File</span><span>Edit</span><span>View</span><span>Go</span><span>Window</span>
+      <div class="right">
+        <div id="glyphWrap"><img id="glyph" src="menu-bar-glyph.png"></div>
+        <span>⌕</span><span id="clock">Fri 4:20 PM</span>
+      </div>
+    </div>
+    <div id="popWrap" class="abs" style="left:0;top:0;width:1920px;height:1080px;">
+      <div id="pop">
+        <div class="hdr">
+          <div class="hdrTint" id="hdrTint"></div>
+          <img class="avatar" id="avatar" src="app-icon.png">
+          <div><div class="name">Merge Goblin</div><div class="ident">@you · claude/sonnet</div></div>
+          <div class="pill" id="pill"><span class="dot" id="dot"><span class="ring" id="ring"></span></span><span id="pillText">on duty</span></div>
+        </div>
+        <div class="div"></div>
+        <div class="body">
+          <div class="field" id="field">
+            <div class="repoChip">widgets <span style="opacity:.8">⌃</span></div><span class="hash">#</span>
+            <div class="ftext" id="ftext"></div>
+            <div class="revBtn" id="revBtn">Review ↩</div>
+          </div>
+          <div class="optRow"><span class="chipG">◉ Preview first</span><span class="opts">Options ›</span></div>
+          <div id="live" style="display:flex;flex-direction:column;gap:8px;">
+            <div class="secLabel" id="liveLabel">In progress</div>
+            <div class="card" id="job">
+              <div class="bar" id="jobBar"></div>
+              <div class="jobIcon" id="jobIcon"></div>
+              <div style="flex:1">
+                <div class="jt">Retry failed webhooks with backoff</div>
+                <div class="js">widgets #2456 · <span id="jobTime">0:01</span></div>
+                <div class="jp" id="jobPhase"></div>
+                <div class="prog"><i id="jobProg"></i></div>
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px;" id="list">
+            <div class="tabs"><div class="glide"></div><div class="sel">Waiting for you<span class="count">3</span></div><div>Recent</div></div>
+            <div class="qrow q"><div class="ic"><svg width="12" height="13" viewBox="0 0 12 14" fill="none" stroke="#8f8f8f" stroke-width="1.4" stroke-linecap="round"><circle cx="3" cy="2.5" r="1.6"/><circle cx="3" cy="11.5" r="1.6"/><circle cx="9.5" cy="4.5" r="1.6"/><path d="M3 4.1v5.8M9.5 6.1c0 2.6-6.5 1.6-6.5 4"/></svg></div><div><div class="qt">Retry failed webhooks with backoff</div><div class="qs">widgets #2456 · @maya</div></div></div>
+            <div class="qrow q"><div class="ic"><svg width="12" height="13" viewBox="0 0 12 14" fill="none" stroke="#8f8f8f" stroke-width="1.4" stroke-linecap="round"><circle cx="3" cy="2.5" r="1.6"/><circle cx="3" cy="11.5" r="1.6"/><circle cx="9.5" cy="4.5" r="1.6"/><path d="M3 4.1v5.8M9.5 6.1c0 2.6-6.5 1.6-6.5 4"/></svg></div><div><div class="qt">Paginate the invoices endpoint</div><div class="qs">widgets #2453 · @dev-sam</div></div></div>
+            <div class="qrow q"><div class="ic"><svg width="12" height="13" viewBox="0 0 12 14" fill="none" stroke="#8f8f8f" stroke-width="1.4" stroke-linecap="round"><circle cx="3" cy="2.5" r="1.6"/><circle cx="3" cy="11.5" r="1.6"/><circle cx="9.5" cy="4.5" r="1.6"/><path d="M3 4.1v5.8M9.5 6.1c0 2.6-6.5 1.6-6.5 4"/></svg></div><div><div class="qt">Dark mode for the settings page</div><div class="qs">widgets #2449 · @lee</div></div></div>
+          </div>
+        </div>
+        <div class="foot"><span>⚙ Settings</span><span>⋯ More ⌄</span><span style="margin-left:auto;color:#777">4 today</span><span>Quit</span></div>
+      </div>
+    </div>
+
+    <div id="c2" class="abs" style="left:150px;top:330px;width:960px;">
+      <div class="kicker" id="c2k">Meet</div>
+      <div class="big" id="c2t" style="margin-top:14px;">Merge Goblin</div>
+      <div class="sub" id="c2s" style="margin-top:28px;max-width:820px;">An AI code reviewer that lives in your Mac's menu bar.</div>
+    </div>
+
+    <div id="c3" class="abs" style="left:150px;top:250px;width:700px;">
+      <div id="c3k"><span class="key">⌥</span><span class="key">⌘</span><span class="key">G</span></div>
+      <div class="mid" id="c3t" style="margin-top:44px;">Type a PR number.<br>Get a review.</div>
+      <div id="c3c" style="margin-top:40px;"><span class="prov">claude</span><span class="prov">codex</span><span class="prov">cursor</span></div>
+      <div class="sub" id="c3s" style="margin-top:22px;max-width:600px;">On the AI subscription you already pay for.</div>
+    </div>
+  </div>
+
+  <!-- 4 the review -->
+  <div id="s4" class="layer">
+    <div id="c4" class="abs" style="left:130px;top:330px;width:600px;">
+      <div class="mid" id="c4a">One review.</div>
+      <div class="mid" id="c4b">Line by line.</div>
+      <div class="mid" id="c4c" style="color:#5cd185">By your repo's<br>own rules.</div>
+    </div>
+    <div class="gh" id="gh" style="left:770px;top:150px;width:1010px;">
+      <div class="head"><div class="av"></div><b style="color:#1f2328">you</b> reviewed · just now</div>
+      <div class="inner">
+        <div class="badge"><span>👺 Merge Goblin</span><span>guards the merge button</span></div>
+        <h3>The Goblin refuses the merge.</h3>
+        <div class="meta"><code>claude/sonnet</code> · inspected <code>aa309fb</code> — 12 files, +1976 −296 against <code>main</code></div>
+        <div class="counts">🔴 1 blocker · 🟠 2 convention</div>
+        <div class="rule"></div>
+        <div class="fine">👺 posted automatically by the <b>Merge Goblin</b> running on @you's machine — this is <b>not</b> a human review from @you. advisory only: it neither approves nor blocks.</div>
+      </div>
+    </div>
+    <img id="inline" src="inline-review.png" style="left:770px;top:150px;">
+  </div>
+
+  <!-- 5 outro -->
+  <div id="s5" class="layer">
+    <img id="wave" src="idle-wave.png" class="abs" style="left:150px;top:250px;width:560px;height:560px;">
+    <div class="abs" style="left:760px;top:300px;width:1050px;">
+      <div class="big" id="o1">Merge Goblin</div>
+      <div class="sub" id="o2" style="margin-top:20px;">He guards the merge button.</div>
+      <div id="o3" style="margin-top:46px;"><span class="cmd mono"><span class="pr">$</span>brew install --cask Kiril-P/tap/merge-goblin</span></div>
+      <div class="sub" id="o4" style="margin-top:36px;font-size:28px;color:#8fa596;">github.com/Kiril-P/merge-goblin · free and open source · macOS 14+</div>
+    </div>
+  </div>
+
+  <div id="fade" class="layer" style="background:#050b07;opacity:0;pointer-events:none;"></div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lin = (t, a, b) => clamp((t - a) / (b - a));
+const eo = x => 1 - Math.pow(1 - x, 3);                // ease out cubic
+const eio = x => x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+const back = x => { const c = 1.6; return 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); };
+const mix = (a, b, k) => a + (b - a) * k;
+// appear: fade + rise, from time a over d seconds
+function rise(el, t, a, d = .45, dy = 26) { const k = eo(lin(t, a, a + d)); el.style.opacity = k; el.style.transform = `translateY(${(1 - k) * dy}px)`; return k; }
+function show(el, on) { el.style.display = on ? '' : 'none'; }
+
+const BLUE = '#0a84ff', GREEN = '#5cd185', ORANGE = '#ff9f0a';
+
+function render(t) {
+  // global dips between scenes
+  const dips = [[3.4, .22], [16.6, .22]];
+  let f = 0; for (const [c, w] of dips) f = Math.max(f, 1 - Math.abs(t - c) / w);
+  $('fade').style.opacity = clamp(f) * .92;
+
+  // ---------- scene 1 ----------
+  show($('s1'), t < 3.62);
+  if (t < 3.62) {
+    const z = mix(1.0, 1.06, eio(lin(t, 0, 3.4)));
+    $('hero').style.transform = `scale(${z})`;
+    $('s1').style.opacity = 1 - lin(t, 3.3, 3.5);
+    const msg = 'Merge pull request';
+    const n = Math.round(lin(t, .25, 1.05) * msg.length);
+    const flipped = t >= 2.05;
+    const caretOn = !flipped && Math.floor(t * 2.4) % 2 === 0;
+    $('btnText').innerHTML = flipped ? 'Not so fast. 👺' : msg.slice(0, n) + (n < msg.length || caretOn ? '<span class="caret"></span>' : '<span class="caret" style="opacity:0"></span>');
+    const pop = flipped ? back(lin(t, 2.05, 2.4)) : 1;
+    const press = 1 - .05 * Math.sin(Math.PI * lin(t, 1.85, 2.05));
+    $('btnText').style.transform = `scale(${press * (flipped ? mix(.7, 1, pop) : 1)})`;
+    $('btnRed').style.opacity = flipped ? eo(lin(t, 2.05, 2.3)) : 0;
+    // cursor glides in, clicks at 1.9
+    const ck = eio(lin(t, 1.1, 1.8));
+    const cx = mix(1500, 1180, ck), cy = mix(1100, 780, ck);
+    const cs = 1 - .15 * Math.sin(Math.PI * lin(t, 1.85, 2.05));
+    const c = $('cursor');
+    c.style.left = cx + 'px'; c.style.top = cy + 'px';
+    c.style.opacity = lin(t, 1.1, 1.3) * (1 - lin(t, 2.3, 2.6));
+    c.style.transform = `scale(${cs})`;
+    // shake on refusal
+    const sh = t > 2.05 && t < 2.45 ? Math.sin(t * 90) * 7 * (1 - lin(t, 2.05, 2.45)) : 0;
+    $('btnText').style.marginLeft = sh + 'px';
+  }
+
+  // ---------- scenes 2–3 ----------
+  const on23 = t >= 3.4 && t < 12.45;
+  show($('s23'), on23);
+  if (on23) {
+    rise($('menubar'), t, 3.45, .35, -52);
+    const pk = lin(t, 4.05, 4.5);
+    const pop = $('pop');
+    // glyph highlight when clicked
+    $('glyphWrap').style.background = t > 3.95 ? 'rgba(255,255,255,.18)' : 'transparent';
+    const out = eio(lin(t, 12.0, 12.4));
+    pop.style.opacity = eo(pk) * (1 - out);
+    const zk = eio(lin(t, 7.45, 8.05));
+    pop.style.transform = `translateY(${(1 - eo(pk)) * -20 - out * 60}px) scale(${mix(1.6, 1.95, zk) * mix(.94, 1, back(pk))})`;
+
+    // header state
+    const reviewing = t >= 8.75 && t < 11.25;
+    const color = reviewing ? BLUE : GREEN;
+    $('pill').style.background = color + '24'; $('pill').style.color = color;
+    $('dot').style.background = color; $('pillText').textContent = reviewing ? 'reviewing' : 'on duty';
+    $('ring').style.borderColor = color;
+    const rp = reviewing ? ((t - 8.75) % 1.1) / 1.1 : 1;
+    $('ring').style.transform = `scale(${1 + rp * 1.6})`; $('ring').style.opacity = reviewing ? 1 - rp : 0;
+    $('hdrTint').style.background = `linear-gradient(${color}22, ${color}00)`;
+    $('avatar').style.transform = reviewing ? `translateY(${Math.sin(t * 7) * 1.5}px)` : 'none';
+
+    // review field
+    const typed = '2456'.slice(0, Math.round(lin(t, 7.95, 8.45) * 4));
+    const focused = t > 7.7;
+    $('field').style.borderColor = focused ? 'rgba(92,209,133,.95)' : 'rgba(92,209,133,.45)';
+    $('field').style.boxShadow = focused && t < 8.8 ? '0 0 0 3px rgba(92,209,133,.18)' : 'none';
+    const sent = t >= 8.7;
+    $('ftext').innerHTML = !sent && typed ? typed + (Math.floor(t * 2.6) % 2 ? '' : '<span style="border-left:1.5px solid #5cd185;margin-left:1px"></span>')
+      : (!sent && focused ? '<span style="border-left:1.5px solid #5cd185"></span><span class="ph">PR number or link</span>' : '<span class="ph">PR number or link</span>');
+    const ready = typed.length === 4 && !sent;
+    const press = 1 - .08 * Math.sin(Math.PI * lin(t, 8.55, 8.75));
+    $('revBtn').style.background = ready ? GREEN : 'rgba(92,209,133,.35)';
+    $('revBtn').style.color = ready ? '#0b1a10' : 'rgba(10,30,15,.7)';
+    $('revBtn').style.transform = `scale(${press})`;
+
+    // job
+    const jk = eo(lin(t, 8.75, 9.15));
+    show($('live'), t >= 8.75);
+    $('live').style.opacity = jk; $('live').style.transform = `translateY(${(1 - jk) * -10}px)`;
+    const phases = [[8.75, 'Fetching the diff', '↓', BLUE], [9.55, 'Reading the code', '⌕', BLUE], [10.35, 'Reviewing', '✦', BLUE], [11.25, 'Ready to read', '✓', GREEN]];
+    let ph = phases[0]; for (const p of phases) if (t >= p[0]) ph = p;
+    $('jobPhase').textContent = ph[1];
+    $('liveLabel').textContent = ph[1] === 'Ready to read' ? 'Ready to read' : 'In progress';
+    $('jobIcon').textContent = ph[2]; $('jobIcon').style.color = ph[3]; $('jobIcon').style.background = ph[3] + '22';
+    $('jobBar').style.background = ph[3];
+    const prog = ph[1] === 'Ready to read' ? 1 : lin(t, 8.75, 11.25) * .92;
+    $('jobProg').style.width = (prog * 100) + '%'; $('jobProg').style.background = ph[3];
+    $('jobTime').textContent = '0:' + String(Math.max(1, Math.floor((t - 8.75) * 18) + 1)).padStart(2, '0');
+    if (ph[1] === 'Ready to read') $('jobTime').textContent = '1m 12s';
+    const pulse = t >= 11.25 ? Math.sin(Math.PI * lin(t, 11.25, 11.65)) : 0;
+    $('job').style.boxShadow = `0 0 0 ${pulse * 3}px rgba(92,209,133,.45)`;
+    // queue rows arrive
+    document.querySelectorAll('.q').forEach((el, i) => rise(el, t, 4.45 + i * .08, .35, 8));
+
+    // left copy, scene 2
+    const c2out = lin(t, 7.25, 7.5);
+    rise($('c2k'), t, 4.4); rise($('c2t'), t, 4.5); rise($('c2s'), t, 4.75);
+    $('c2').style.opacity = 1 - c2out; show($('c2'), t < 7.5);
+    // scene 3
+    show($('c3'), t >= 7.55);
+    document.querySelectorAll('#c3k .key').forEach((el, i) => {
+      const k = rise(el, t, 7.6 + i * .09, .3, 20);
+      const hit = Math.sin(Math.PI * lin(t, 7.85, 8.0));
+      el.style.transform += ` translateY(${hit * 5}px)`;
+      el.style.boxShadow = `0 ${6 - hit * 5}px 0 #0c0d0c, 0 10px 30px rgba(0,0,0,.4)`;
+    });
+    rise($('c3t'), t, 8.0);
+    document.querySelectorAll('#c3c .prov').forEach((el, i) => rise(el, t, 9.3 + i * .12, .35, 14));
+    rise($('c3s'), t, 9.6);
+    $('c3').style.opacity = (t >= 7.55 ? 1 : 0) * (1 - lin(t, 11.95, 12.25));
+  }
+
+  // ---------- scene 4 ----------
+  const on4 = t >= 12.2 && t < 16.85;
+  show($('s4'), on4);
+  if (on4) {
+    rise($('c4a'), t, 12.45); rise($('c4b'), t, 12.8); rise($('c4c'), t, 13.15);
+    const g = eo(lin(t, 12.25, 12.75));
+    $('gh').style.opacity = g; $('gh').style.transform = `translateY(${(1 - g) * 60}px) scale(${mix(.96, 1, g)})`;
+    // the inline comment arrives over the summary, which steps back
+    const ik = eo(lin(t, 14.05, 14.6));
+    $('inline').style.opacity = eo(lin(t, 14.05, 14.3));
+    $('inline').style.transform = `translateY(${mix(820, 110, ik) + lin(t, 14.6, 16.6) * -12}px)`;
+    const back4 = eio(lin(t, 14.05, 14.6));
+    $('gh').style.transform += ` translateY(${-70 * back4}px) scale(${1 - .06 * back4})`;
+    $('gh').style.filter = `brightness(${1 - .45 * back4})`;
+    $('s4').style.opacity = 1 - lin(t, 16.4, 16.6);
+  }
+
+  // ---------- scene 5 ----------
+  const on5 = t >= 16.6;
+  show($('s5'), on5);
+  if (on5) {
+    const w = back(lin(t, 16.75, 17.3));
+    $('wave').style.opacity = eo(lin(t, 16.75, 17.0));
+    $('wave').style.transform = `translateY(${(1 - w) * 80 + Math.sin((t - 17) * 2.4) * 6}px) rotate(${Math.sin((t - 17) * 3.1) * 1.5}deg)`;
+    rise($('o1'), t, 16.9); rise($('o2'), t, 17.1); rise($('o3'), t, 17.3); rise($('o4'), t, 17.5);
+  }
+
+  // ambient glow follows the story
+  const gx = t < 3.4 ? 70 : t < 12.2 ? 72 : t < 16.6 ? 60 : 30;
+  $('glow').style.background = `radial-gradient(900px 700px at ${gx}% 50%, rgba(92,209,133,${t < 3.4 ? 0 : .10}), transparent 70%)`;
+}
+
+window.render = render;
+window.assetsReady = Promise.all([document.fonts.ready, ...[...document.images].map(i => i.complete ? i.decode().catch(() => {}) : new Promise(r => { i.onload = i.onerror = r; }))]);
+const q = new URLSearchParams(location.search);
+render(parseFloat(q.get('t') || '0'));
+</script>
+</body>
+</html>

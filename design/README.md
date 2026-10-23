@@ -9,7 +9,7 @@ same style. Nothing is hand-drawn except `goblin-bar.svg`, the code-drawn fallba
 | `app-icon.png` | 1024, alpha | the app icon (`goblin.icns`) and the popover avatar |
 | `menu-bar-glyph.png` | 1024, alpha | the menu bar silhouette (a template image: macOS tints it) |
 | `mascot/*.png` | 512, alpha | idle-wave, sleeping, reviewing, alert, empty: in-app illustrations |
-| `hero.png` | 1600×600 | top of the README |
+| `hero.png` | 1600×600 | the opening scene of the demo video, and the X/portfolio poster |
 | `social-preview.png` | 1280×640 | GitHub → Settings → Social preview (upload by hand) |
 | `dmg-background.png` | 1320×800 | the installer window, shown at 660×400 |
 | `alternates/` | | the two icon styles and glyph that were not chosen |
@@ -22,3 +22,22 @@ swift scripts/make-icons.swift
 
 The menu bar glyph is all `(0,0,0)` with transparent eyes and grin. If it is replaced,
 keep it that way: no colour, no gradients, no thin lines, or it will not survive at 18pt.
+
+## The demo video
+
+`docs/media/merge-goblin-demo.{mp4,gif}` (20 s) is drawn in a browser from
+`demo-video/index.html`, one frame at a time, with a soundtrack synthesised by
+`demo-video/audio.py`. The PRs in it are invented. `demo-video/brag-plan.md` is the
+storyboard. To re-render, put `hero.png`, `app-icon.png`, `menu-bar-glyph.png`,
+`mascot/idle-wave.png` and `docs/media/merge-goblin-inline-review.png` (as
+`inline-review.png`) next to `index.html`, then:
+
+```bash
+npm i playwright && mkdir frames
+node capture.mjs frames 30 20 frames          # 600 PNGs
+uv run --with numpy python audio.py           # music.wav
+ffmpeg -framerate 30 -i frames/f%05d.png -i music.wav -c:v libx264 -crf 18 \
+  -pix_fmt yuv420p -c:a aac -shortest demo.mp4
+```
+
+`capture.mjs` reads the browser path from `$CHROME` (any Chromium works).
