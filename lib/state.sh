@@ -197,8 +197,8 @@ ui_state_write() {
         skip: {bots: (.skip.bots != false), docsOnly: (.skip.docsOnly == true)},
         telemetry: {enabled: (.telemetry.enabled == true)},
         providers: (.providers | to_entries | map(.value = {model: .value.model,
-          effort: ((.value.effort // "") as $e
-                   | if $e == "" and .key == "codex" then (.value.reasoningEffort // "medium") else $e end)}) | from_entries)
+          effort: (if (.value | has("effort")) then (.value.effort // "")
+                   elif .key == "codex" then (.value.reasoningEffort // "medium") else "" end)}) | from_entries)
       }' '{}')" \
     --argjson running "$running" --argjson disabled "$disabled" \
     --argjson installed "$installed" \

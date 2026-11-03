@@ -4,6 +4,7 @@
 # CLAUDE_FAKE_PROMPT_OUT=<file> keeps the prompt it was given; CLAUDE_FAKE_ARGS_OUT its argv.
 case "${1:-}" in
   --version) echo "0.0.0-fake" ;;
+  --help) [ -z "${CLAUDE_FAKE_NO_EFFORT:-}" ] && echo "  --effort <level>  Effort level for the current session" ;;
   auth) echo '{"loggedIn":true,"authMethod":"fake","subscriptionType":"test"}' ;;
   -p)
     if [ -n "${CLAUDE_FAKE_PROMPT_OUT:-}" ]; then cat > "$CLAUDE_FAKE_PROMPT_OUT"; else cat >/dev/null; fi

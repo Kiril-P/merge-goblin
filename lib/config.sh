@@ -16,7 +16,7 @@ goblin_default_config() {
   "provider": "claude",
   "providers": {
     "claude": { "model": "sonnet", "effort": "", "bin": "" },
-    "codex":  { "model": "", "effort": "", "reasoningEffort": "medium", "bin": "" },
+    "codex":  { "model": "", "effort": "medium", "bin": "" },
     "cursor": { "model": "", "bin": "" }
   },
   "providerFallback": [],
@@ -216,12 +216,13 @@ provider_effort_valid() {
 }
 
 # provider_effort <name> — the effort a review by <name> runs at right now (config plus
-# any per-review overlay); empty when the provider decides. Codex's older
-# `reasoningEffort` key still counts, and its default was always medium.
+# any per-review overlay); empty when the provider decides.
 provider_effort() {
   local name="$1" eff=""
-  eff="$(cfg_get ".providers.$name.effort" '')"
-  if [ -z "$eff" ] && [ "$name" = codex ]; then eff="$(cfg_get '.providers.codex.reasoningEffort' 'medium')"; fi
+  # An explicit "" is a choice (the provider's own default). Only a config that has no
+  # `effort` key at all, i.e. one older than this setting, falls back to codex's old
+  # `reasoningEffort`, which is what it ran on.
+  eff="$(cfg_read | jq -r --arg n "$name" '.providers[$n] // {} | if has("effort") then (.effort // "") elif $n == "codex" then (.reasoningEffort // "medium") else "" end' 2>/dev/null)"
   provider_effort_valid "$name" "$eff" || eff=""
   printf '%s' "$eff"
 }

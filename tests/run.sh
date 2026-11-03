@@ -2170,6 +2170,7 @@ t "fail: a timeout is called a timeout"     test_a_timeout_is_called_a_timeout
 
 . "$ROOT/tests/effort_test.sh"
 t "effort: reaches claude only when set"      test_effort_reaches_claude_only_when_set
+t "effort: an old claude is not given --effort" test_an_old_claude_without_effort_is_not_given_it
 t "effort: validated per provider"            test_effort_is_validated_per_provider
 t "effort: codex falls back to the old key"   test_codex_effort_falls_back_to_the_old_key
 t "effort: the state says what is in use"     test_state_shows_the_effort_in_use

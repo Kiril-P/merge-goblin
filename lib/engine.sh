@@ -388,7 +388,7 @@ engine_pr() {
   prior="$(gh_prior_review "$slug" "$pr")"
   if [ -n "$prior" ]; then
     last_sha="$(printf '%s' "$prior" | jq -r '.m.headSha // ""')"
-    if [ "$last_sha" = "$head" ] && [ "$FORCE" != true ] && [ -z "$ONLY_PR" ]; then
+    if [ "$last_sha" = "$head" ] && [ "$FORCE" != true ] && [ "${GOBLIN_REVIEW_AGAIN:-}" != true ]; then
       log "  #$pr: already reviewed at $(trunc "$head" 7)"
       ledger_add "$key"
       return 0

@@ -283,7 +283,10 @@ review_run_job() {
   # Applied to this process only (see cfg_read); never written back.
   # An effort chosen for one provider means nothing to another (the repo's or the
   # fallback's), so it is dropped when the review ends up elsewhere.
-  provider_effort_valid "$provider" "$effort_ov" || effort_ov=""
+  if ! provider_effort_valid "$provider" "$effort_ov"; then
+    log "job $id: $provider has no \"$effort_ov\" effort, so this review uses its own"
+    effort_ov=""
+  fi
   GOBLIN_CFG_OVERLAY="$(jq -nc --arg p "$provider" --arg m "$model_ov" --arg e "$effort_ov" \
     '{provider:$p} + ({providers:{($p):(
         (if $m != "" then {model:$m} else {} end) + (if $e != "" then {effort:$e} else {} end))}}
@@ -324,6 +327,8 @@ review_run_job() {
   local last_sha=""
   last_sha="$(gh_prior_review "$slug" "$number" | jq -r '.m.headSha // ""' 2>/dev/null)"
 
+  # Only a review asked for by number may repeat a commit; `goblin run --pr` still dedups.
+  GOBLIN_REVIEW_AGAIN=true
   ONLY_PR="$number"; DRY_RUN=false; FORCE="$force"
   PREVIEW=false; [ "$mode" = preview ] && PREVIEW=true
   GOBLIN_FOCUS="$focus"; export GOBLIN_FOCUS

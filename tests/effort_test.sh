@@ -16,6 +16,17 @@ test_effort_reaches_claude_only_when_set() {
   review_env_done
 }
 
+test_an_old_claude_without_effort_is_not_given_it() {
+  review_env
+  export CLAUDE_FAKE_ARGS_OUT="$GOBLIN_HOME/args.txt" CLAUDE_FAKE_NO_EFFORT=1
+  "$G" panel set provider-effort claude high >/dev/null 2>&1
+  "$G" review 2456 --repo acme/widgets >/dev/null 2>&1
+  eq "ready" "$(jq -r .phase "$GOBLIN_HOME/jobs/$(review_job_id)/job.json")" || return 1
+  grep -qx -- '--effort' "$CLAUDE_FAKE_ARGS_OUT" && { echo "passed --effort to a claude that lacks it"; return 1; }
+  unset CLAUDE_FAKE_NO_EFFORT
+  review_env_done
+}
+
 test_effort_is_validated_per_provider() {
   review_env
   "$G" panel set provider-effort claude minimal >/dev/null 2>&1 && { echo "claude accepted a codex-only level"; return 1; }
@@ -29,11 +40,13 @@ test_effort_is_validated_per_provider() {
 test_codex_effort_falls_back_to_the_old_key() {
   review_env
   . "$ROOT/lib/brand.sh"; . "$ROOT/lib/paths.sh"; . "$ROOT/lib/core.sh"; . "$ROOT/lib/config.sh"
-  eq "medium" "$(provider_effort codex)" || return 1
-  cfg_set '.providers.codex.reasoningEffort = "high"'
+  cfg_set 'del(.providers.codex.effort) | .providers.codex.reasoningEffort = "high"'
   eq "high" "$(provider_effort codex)" || return 1
   cfg_set '.providers.codex.effort = "low"'
   eq "low" "$(provider_effort codex)" || return 1
+  # choosing "Provider default" must stick, not turn back into medium
+  cfg_set '.providers.codex.effort = ""'
+  eq "" "$(provider_effort codex)" || return 1
   eq "" "$(provider_effort claude)" || return 1
   review_env_done
 }

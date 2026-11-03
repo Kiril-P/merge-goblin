@@ -116,7 +116,7 @@ run_with_timeout() {
     # The watcher is still alive during its 5s grace after the TERM, so a child the
     # TERM did stop lands here too, as 143. That is a timeout: it used to be reported
     # as "stopped with an error", and no timeout was ever recorded.
-    [ "$rc" -ne 0 ] && [ $((SECONDS - t0)) -ge "$secs" ] && rc=124
+    { [ "$rc" -eq 143 ] || [ "$rc" -eq 137 ]; } && [ $((SECONDS - t0)) -ge "$secs" ] && rc=124
   else
     [ "$rc" -ne 0 ] && rc=124
   fi

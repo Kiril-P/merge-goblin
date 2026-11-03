@@ -48,6 +48,8 @@ telemetry_review() {
   # Only an error KIND may leave: a lowercase word, never free text.
   printf '%s' "$reason" | grep -qE '^[a-z_]{1,24}$' || reason=""
   [ "$st" = failed ] || reason=""
+  printf '%s' "$effort" | grep -qE '^[a-z]{3,8}$' || effort=""
+  printf '%s' "$ms" | grep -qE '^[0-9]{1,9}$' || ms=0
   printf '%s' "$model" | grep -qE '^[A-Za-z0-9._:-]{1,64}$' || model=""
   local body os
   os="$(sw_vers -productVersion 2>/dev/null | cut -d. -f1)"

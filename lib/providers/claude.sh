@@ -39,6 +39,11 @@ provider_claude_review() {
   bin="$(provider_claude_bin)" || { GOBLIN_P_ERRKIND=other; GOBLIN_P_ERRMSG="claude not found"; return 1; }
   model="$(cfg_get '.providers.claude.model' 'sonnet')"
   local eff; eff="$(provider_effort claude)"
+  # An older claude has no --effort and would fail every review on an unknown option.
+  if [ -n "$eff" ] && ! "$bin" --help 2>&1 | grep -q -- '--effort'; then
+    log "  claude: this claude CLI has no --effort option, so effort \"$eff\" is ignored. Update claude to use it."
+    eff=""
+  fi
   GOBLIN_P_EFFORT="$eff"
   to="$(cfg_get '.timeoutSecs' 900)"
   t0="$(now_epoch)"
