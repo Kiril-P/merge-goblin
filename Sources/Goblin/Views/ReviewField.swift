@@ -276,13 +276,8 @@ struct ReviewField: View {
                     if let p = store.providers.first(where: { $0.name == (input.options.provider?.rawValue ?? store.snapshot.providerId) }) {
                         HStack {
                             Text("Model")
-                            ModelMenu(store: store, provider: p.name, selection: $input.options.model, defaultLabel: "Default")
-                        }
-                        if !ProviderInfo.effortLevels(p.name).isEmpty {
-                            HStack {
-                                Text("Effort")
-                                EffortMenu(provider: p.name, selection: $input.options.effort, defaultLabel: "Default")
-                            }
+                            ModelMenu(store: store, provider: p.name, selection: $input.options.model,
+                                      effort: $input.options.effort, defaultLabel: "Default")
                         }
                     }
                 }

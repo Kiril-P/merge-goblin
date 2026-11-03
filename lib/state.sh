@@ -188,6 +188,7 @@ ui_state_write() {
     --argjson inbox "$inbox" \
     --argjson stuck "$stuck" \
     --argjson jobs "$jobs" \
+    --argjson telemetryOn "$(command -v telemetry_on >/dev/null 2>&1 && telemetry_on && echo true || echo false)" \
     --argjson settings "$(cfg_get_json '{
         verdictMode, allowApprove, budgetCapUsd, maxReviewsPerDay, maxReviewsPerRun,
         maxFindings, intervalSeconds, timeoutSecs, maxDiffBytes, incrementalReview,
@@ -195,7 +196,6 @@ ui_state_write() {
         manualReviewMode, maxConcurrentJobs, lastRepo, providerFallback,
         notify,
         skip: {bots: (.skip.bots != false), docsOnly: (.skip.docsOnly == true)},
-        telemetry: {enabled: (.telemetry.enabled == true)},
         providers: (.providers | to_entries | map(.value = {model: .value.model,
           effort: (if (.value | has("effort")) then (.value.effort // "")
                    elif .key == "codex" then (.value.reasoningEffort // "medium") else "" end)}) | from_entries)
@@ -225,7 +225,7 @@ ui_state_write() {
       # presented as a live value invites you to "fix" what is already correct.
       # Providers are reduced to models only: no `bin` ever reaches the UI, because
       # a UI that can display a binary path is one patch away from editing it.
-      settings: $settings,
+      settings: ($settings + {telemetry: {enabled: $telemetryOn}}),
       repos: $repos,
       fleet: $fleet,
       inbox: $inbox,

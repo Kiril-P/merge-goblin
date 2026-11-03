@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.6.1
+
+- **Effort is chosen the way Cursor's already was.** In the model menu (header,
+  Settings › Reviewer, a review's Options) each Claude and Codex model opens onto its
+  effort levels, and the header reads "GPT-6-Luna Medium" like a Cursor variant does.
+  The separate effort menu and the extra header item are gone, so the header is back
+  to its old spacing.
+- **Anonymous usage counts are on by default,** and now actually go somewhere: a small
+  collector (`collector/`, a Cloudflare Worker) that re-checks every field. Off in
+  Settings › General › Privacy, at the end of setup, with `goblin telemetry off`, or
+  with `DO_NOT_TRACK=1`. Turning it off deletes the install id. Besides each review's
+  model, effort and outcome, a daily snapshot says which settings are on (booleans and
+  fixed values only), how many repos are watched (a number), how often each command
+  and screen was used, and how posted findings fared. Never a repo, PR, person or code.
+- **`goblin insights`**: this Mac's own picture over the last N days: reviews and
+  failure rates per model and effort, failure kinds, skip reasons, findings
+  addressed, settings changed from their defaults, the most used commands, and the
+  screens never opened. Local only. `scripts/fleet-stats.sh` is the same across every
+  install that shares counts.
+
 ## 0.6.0
 
 You can now see, and choose, how hard the AI thinks; a manual review is always a

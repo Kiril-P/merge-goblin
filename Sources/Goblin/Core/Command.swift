@@ -198,6 +198,8 @@ enum Command: Equatable {
     case setProviderModel(provider: ProviderId, model: String)   // ^[A-Za-z0-9._:-]{0,64}$
     case setProviderEffort(provider: ProviderId, effort: String) // one of ProviderInfo.effortLevels, or ""
     case setTelemetry(Bool)
+    /// Counts one use of a screen in the local usage log. Fixed names from the code only.
+    case noteUI(String)                 // ^[a-z][a-z0-9.-]{0,40}$
     case setProviderFallback(ProviderId?)   // who reviews while the main one is at its limit
 
     // repos
@@ -344,6 +346,8 @@ enum Command: Equatable {
             return Command.panelSet("provider-effort", provider.rawValue, effort)
         case .setTelemetry(let on):
             return Command.panelSet("telemetry", on ? "on" : "off")
+        case .noteUI(let name):
+            return .cli(argv: ["telemetry", "ui", name], timeout: .read, mutating: false, json: false)
 
         case .repoAdd(let slug):
             return .cli(argv: ["repos", "add", slug], timeout: .mutation, mutating: true, json: false)
@@ -455,6 +459,11 @@ enum Command: Equatable {
             if !Pattern.githubLogin.accepts(login) { throw CommandRefusal("login is not in the accepted format") }
         case .setProviderModel(_, let model):
             if !Pattern.model.accepts(model) { throw CommandRefusal("model is not in the accepted format") }
+        case .noteUI(let name):
+            let ok = Set("abcdefghijklmnopqrstuvwxyz0123456789.-")
+            guard (1...41).contains(name.count), name.first?.isLetter == true, name.allSatisfy({ ok.contains($0) }) else {
+                throw CommandRefusal("not a screen name")
+            }
         case .setProviderEffort(let provider, let effort):
             if !effort.isEmpty, !ProviderInfo.effortLevels(provider.rawValue).contains(effort) {
                 throw CommandRefusal("effort is not a level this provider has")

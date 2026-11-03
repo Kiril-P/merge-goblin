@@ -69,8 +69,8 @@ struct GeneralPane: View {
         SettingsGroup(title: "Privacy") {
             SettingRow(title: "Share anonymous usage counts",
                        hint: s.settings.telemetry
-                        ? "On. Per review: which AI, model and effort, whether it posted or failed, and how long it took. Never repos, PRs, people or code. `goblin telemetry show` prints the last one."
-                        : "Off. Nothing about your use leaves this Mac. Turn on to help show which models and efforts people actually use.",
+                        ? "On. Which AI, model and effort reviews use, whether they posted or failed, which settings are on and which screens get used. Never repos, PRs, people or code. `goblin telemetry show` prints the last one."
+                        : "Off. Nothing about how you use the Goblin leaves this Mac.",
                        last: true) {
                 Toggle("", isOn: Binding(
                     get: { s.settings.telemetry },
@@ -321,19 +321,12 @@ private struct ProviderCard: View {
         else { Chip(text: "Not installed", symbol: "arrow.down.circle", tint: .secondary) }
     }
 
-    @ViewBuilder private var modelRow: some View {
+    private var modelRow: some View {
         HStack(spacing: 8) {
             Text("Model").font(.system(size: 12.5, weight: .medium)).foregroundStyle(.secondary).frame(width: 46, alignment: .leading)
             ModelMenu(store: store, provider: provider.name,
-                      selection: Binding(get: { saved }, set: { choose($0) }))
-        }
-        if !ProviderInfo.effortLevels(provider.name).isEmpty {
-            HStack(spacing: 8) {
-                Text("Effort").font(.system(size: 12.5, weight: .medium)).foregroundStyle(.secondary).frame(width: 46, alignment: .leading)
-                EffortMenu(provider: provider.name, selection: Binding(get: { savedEffort }, set: { chooseEffort($0) }))
-            }
-            Text("How hard it thinks before answering. Higher finds more and takes longer.")
-                .font(.system(size: 11)).foregroundStyle(.tertiary)
+                      selection: Binding(get: { saved }, set: { choose($0) }),
+                      effort: .constant(savedEffort), onPick: { choose($0, effort: $1) })
         }
     }
 
@@ -345,12 +338,14 @@ private struct ProviderCard: View {
         }
     }
 
-    private func choose(_ model: String) {
-        guard model != saved, let id = ProviderId(rawValue: provider.name) else { return }
-        let label = ModelCatalog.label(for: model, in: store.modelCatalog[provider.name] ?? [])
+    private func choose(_ model: String, effort: String? = nil) {
+        let effortChanged = effort != nil && effort != savedEffort
+        guard model != saved || effortChanged, let id = ProviderId(rawValue: provider.name) else { return }
+        let name = model.isEmpty ? "\(provider.displayName)'s default model" : ModelCatalog.label(for: model, in: store.modelCatalog[provider.name] ?? [])
         Task {
-            await store.perform(.setProviderModel(provider: id, model: model),
-                                success: model.isEmpty ? "Using \(provider.displayName)'s default model." : "Model set to \(label).")
+            if model != saved, !(await store.perform(.setProviderModel(provider: id, model: model))) { return }
+            if effortChanged, let effort, !(await store.perform(.setProviderEffort(provider: id, effort: effort))) { return }
+            store.say("Using \(ModelEffort.label(model: name, effort: effort ?? savedEffort)).", .info)
         }
     }
 

@@ -55,6 +55,8 @@ struct SettingsView: View {
         .frame(minWidth: 680, minHeight: 460)
         .background(.background)
         .toasts(store)
+        .onAppear { store.noteUI("settings.\(nav.pane.rawValue)") }
+        .onChange(of: nav.pane) { _, p in store.noteUI("settings.\(p.rawValue)") }
     }
 
     // MARK: sidebar

@@ -23,6 +23,8 @@ struct PopoverView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+                .onAppear { store.noteUI("popover") }
+                .onChange(of: tab) { _, t in store.noteUI(t == .queue ? "tab.waiting" : "tab.recent") }
             Divider().opacity(0.5)
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {

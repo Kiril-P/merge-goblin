@@ -53,10 +53,6 @@ struct IdentityLine: View {
                 providerMenu
                 dot
                 modelMenu
-                if !ProviderInfo.effortLevels(s.providerId).isEmpty {
-                    dot
-                    effortMenu
-                }
             }
             .font(.system(size: 11.5))
             .padding(.leading, -4)
@@ -112,22 +108,23 @@ struct IdentityLine: View {
         .task { if store.providers.isEmpty { await store.refreshProviders() } }
     }
 
+    private var levels: [String] { ProviderInfo.effortLevels(s.providerId) }
+
     private var modelMenu: some View {
         let current = s.providerModel
-        return InlineMenu(text: current.isEmpty ? "default model" : ModelCatalog.label(for: current, in: models, defaultLabel: "default model"),
+        let name = current.isEmpty ? "default model" : ModelCatalog.label(for: current, in: models, defaultLabel: "default model")
+        return InlineMenu(text: ModelEffort.label(model: name, effort: levels.isEmpty ? "" : s.providerEffort),
                           help: "The model — click to switch") {
-            Button { set("") } label: { check(current.isEmpty, "Provider default") }
+            item(ModelOption(id: "", label: "Provider default"))
             Divider()
             if models.count > ModelCatalog.groupingThreshold {
                 ForEach(ModelCatalog.grouped(models)) { group in
                     Menu(group.vendor) {
                         ForEach(group.families) { family in
                             if family.options.count == 1, let only = family.options.first {
-                                Button { set(only.id) } label: { check(only.id == current, only.label) }
+                                item(only)
                             } else {
-                                Menu(family.title) {
-                                    ForEach(family.options) { o in Button { set(o.id) } label: { check(o.id == current, o.label) } }
-                                }
+                                Menu(family.title) { ForEach(family.options) { item($0) } }
                             }
                         }
                     }
@@ -135,7 +132,7 @@ struct IdentityLine: View {
             } else if models.isEmpty {
                 Text(store.isLoadingModels(s.providerId) ? "Loading models…" : "No model list from \(s.providerId)")
             } else {
-                ForEach(models) { o in Button { set(o.id) } label: { check(o.id == current, o.label) } }
+                ForEach(models) { item($0) }
             }
             Divider()
             Button("Reviewer settings…") { windows.showSettings(.reviewer) }
@@ -143,35 +140,25 @@ struct IdentityLine: View {
         .task(id: s.providerId) { await store.loadModels(s.providerId) }
     }
 
-    private var effortMenu: some View {
-        let current = s.providerEffort
-        return InlineMenu(text: current.isEmpty ? "default effort" : "\(ProviderInfo.effortLabel(current).lowercased()) effort",
-                          help: "How hard the model thinks — click to change") {
-            Section("Effort") {
-                Button { setEffort("") } label: { check(current.isEmpty, "Provider default") }
-                ForEach(ProviderInfo.effortLevels(s.providerId), id: \.self) { level in
-                    Button { setEffort(level) } label: { check(level == current, ProviderInfo.effortLabel(level)) }
-                }
+    /// A Cursor model is already one variant; a Claude or Codex model opens onto its efforts.
+    @ViewBuilder private func item(_ o: ModelOption) -> some View {
+        if levels.isEmpty {
+            Button { set(o.id, effort: s.providerEffort) } label: { check(o.id == s.providerModel, o.label) }
+        } else {
+            ModelEffort.Variants(option: o, levels: levels, model: s.providerModel, effort: s.providerEffort) { m, e in
+                set(m, effort: e)
             }
-            Divider()
-            Button("Reviewer settings…") { windows.showSettings(.reviewer) }
         }
     }
 
-    private func setEffort(_ effort: String) {
-        guard effort != s.providerEffort else { return }
+    private func set(_ model: String, effort: String) {
+        let modelChanged = model != s.providerModel, effortChanged = !levels.isEmpty && effort != s.providerEffort
+        guard modelChanged || effortChanged else { return }
+        let name = model.isEmpty ? "\(s.providerId)'s default model" : ModelCatalog.label(for: model, in: models)
         Task {
-            await store.perform(.setProviderEffort(provider: provider, effort: effort),
-                                success: effort.isEmpty ? "\(s.providerId.capitalized) picks its own effort."
-                                                        : "Reviews now think at \(ProviderInfo.effortLabel(effort).lowercased()) effort.")
-        }
-    }
-
-    private func set(_ model: String) {
-        guard model != s.providerModel else { return }
-        Task {
-            await store.perform(.setProviderModel(provider: provider, model: model),
-                                success: model.isEmpty ? "Using \(s.providerId)'s default model." : "Reviews now use \(model).")
+            if modelChanged, !(await store.perform(.setProviderModel(provider: provider, model: model))) { return }
+            if effortChanged, !(await store.perform(.setProviderEffort(provider: provider, effort: effort))) { return }
+            store.say("Reviews now use \(ModelEffort.label(model: name, effort: levels.isEmpty ? "" : effort)).", .info)
         }
     }
 

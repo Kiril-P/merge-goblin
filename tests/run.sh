@@ -9,6 +9,8 @@
 #   ./tests/run.sh <pattern>  run matching tests
 
 set -uo pipefail
+# Never send telemetry from a test run; the telemetry tests turn it back on against a fake.
+export DO_NOT_TRACK=1
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FILTER="${1:-}"
@@ -2174,8 +2176,11 @@ t "effort: an old claude is not given --effort" test_an_old_claude_without_effor
 t "effort: validated per provider"            test_effort_is_validated_per_provider
 t "effort: codex falls back to the old key"   test_codex_effort_falls_back_to_the_old_key
 t "effort: the state says what is in use"     test_state_shows_the_effort_in_use
-t "telemetry: off by default, sends nothing"  test_telemetry_is_off_and_sends_nothing_by_default
-t "telemetry: no repo, PR or person in it"    test_telemetry_payload_has_no_repo_pr_or_person
+t "telemetry: on by default, anonymous"      test_telemetry_is_on_by_default_and_anonymous
+t "telemetry: off sends nothing, forgets id"  test_telemetry_off_sends_nothing_and_forgets_the_id
+t "usage: actions counted, not reads or args" test_usage_log_counts_actions_not_reads_or_arguments
+t "telemetry: daily snapshot, once a day"     test_daily_snapshot_has_settings_and_usage_once_a_day
+t "insights: models, failures, unused screens" test_insights_reports_models_failures_and_unused_screens
 
 printf '\n  %s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -gt 0 ] && { printf '  failed:%b\n\n' "$FAILED"; exit 1; }

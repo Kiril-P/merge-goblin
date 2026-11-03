@@ -513,6 +513,21 @@ private struct DoneStep: View {
                         .toggleStyle(.switch).labelsHidden().tint(Theme.accent)
                 }
             }
+            Card {
+                HStack(spacing: 12) {
+                    Image(systemName: "chart.bar").font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.accent)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Share anonymous usage counts").font(.system(size: 13, weight: .semibold))
+                        Text("Which models, settings and screens get used, so the Goblin can get better. Never repos, PRs, people or code. Change it any time in Settings › General.")
+                            .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    Toggle("", isOn: Binding(get: { store.snapshot.settings.telemetry },
+                                             set: { on in Task { await store.perform(.setTelemetry(on)) } }))
+                        .toggleStyle(.switch).labelsHidden().tint(Theme.accent)
+                }
+            }
             VStack(alignment: .leading, spacing: 8) {
                 SectionLabel(text: "Three ways to ask")
                 HStack(alignment: .top, spacing: 10) {

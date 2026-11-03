@@ -52,6 +52,18 @@ GOBLIN_APP="${GOBLIN_APP:-$(cd "$(dirname "$_self")/.." && pwd)}"
 need() { command -v "$1" >/dev/null 2>&1 || { echo "$GOBLIN_SLUG: missing dependency '$1'" >&2; exit 1; }; }
 need jq
 
+# What gets used, counted locally (lib/telemetry.sh): actions, never the reads the app
+# polls, and never arguments, except the name of a settings key.
+case "${1:-}" in
+  ""|status|inbox|jobs|job|accounts|wizard|version|help|-h|--help|telemetry|repo-search|resolve|log|stats|insights) ;;
+  panel) [ "${2:-}" = set ] && usage_note "panel.${3:-}" ;;
+  run)   [ "${2:-}" = --pr ] && usage_note run.pr ;;          # the scheduler's own runs are not use
+  review) [ "${2:-}" = --run-job ] || usage_note review ;;     # the detached worker half is the same review
+  provider|repos|repo|fleet|agent|budget|snooze|update)
+         case "${2:-}" in ""|list|which|models|status|search) ;; *) usage_note "${1}.${2}" ;; esac ;;
+  *) usage_note "$1" ;;
+esac
+
 usage() {
   cat <<EOF
 $GOBLIN_EMOJI $GOBLIN_NAME v$GOBLIN_VERSION — $GOBLIN_TAGLINE
@@ -59,7 +71,8 @@ $GOBLIN_EMOJI $GOBLIN_NAME v$GOBLIN_VERSION — $GOBLIN_TAGLINE
   goblin ui                        open the control panel (everything is here)
   goblin status [--json]              current state, stats and spend
   goblin doctor [--fix] [--json]      diagnose everything; --fix repairs the safe ones
-  goblin telemetry [on|off|show]      optional anonymous usage counts (off by default)
+  goblin insights [--json] [--days N] what is used, what fails, what is never touched
+  goblin telemetry [on|off|show]      anonymous usage counts (on; off turns them off)
   goblin review <ref> [--post]        review one PR (2456, owner/repo#2456 or a URL);
           [--repo S] [--focus F]      waits in preview until you post it (goblin post)
   goblin post <job> | cancel <job>    publish a waiting review / stop or discard one
@@ -117,6 +130,7 @@ case "$cmd" in
   stats)    . "$LIB_DIR/stats.sh";       cmd_stats "$@" ;;
   update)   . "$LIB_DIR/update.sh";      cmd_update "$@" ;;
   telemetry) cmd_telemetry "$@" ;;
+  insights) . "$LIB_DIR/insights.sh"; cmd_insights "$@" ;;
   version)  echo "$GOBLIN_NAME $GOBLIN_VERSION" ;;
   help|-h|--help) usage ;;
   # everything else is a small control verb

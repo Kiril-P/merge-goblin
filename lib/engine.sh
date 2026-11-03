@@ -68,6 +68,7 @@ cmd_run() {
 
   engine_gates || { lock_release; return 0; }
   engine_auth  || { lock_release; return 1; }
+  telemetry_daily
 
   local provider
   # Load the adapters in THIS shell. providers_pick also loads them, but it runs
@@ -756,6 +757,7 @@ engine_save_preview() {
       }' > "$out/review.json"
 
   local counts; counts="$(render_counts "$work/norm.json")"
+  GOBLIN_T_FINDINGS="$(jq '.findings | length' "$work/norm.json" 2>/dev/null)"
   events_append previewed "$pr" "$title" "$url" "$cost" "" "$slug" "$provider" "$model" "${GOBLIN_P_EFFORT:-}"
   log "  #$pr: preview ready — $counts"
   notify posted "$GOBLIN_NAME finished 👺" "#$pr is ready to read — $counts" ready
@@ -909,6 +911,7 @@ engine_publish() {
 
   ledger_add "${pr}:${head}"
   attempt_clear "${pr}:${head}"
+  GOBLIN_T_FINDINGS="$(jq '.findings | length' "$work/norm.json" 2>/dev/null)"
   events_append posted "$pr" "$title" "$url" "$cost" "" "$slug" "$provider" "$model" "${GOBLIN_P_EFFORT:-}"
   REVIEWS_THIS_RUN=$((REVIEWS_THIS_RUN + 1))
   log "  #$pr: posted — $counts ($inline_n inline)${cost:+, \$$cost}"
