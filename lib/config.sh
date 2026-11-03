@@ -15,8 +15,8 @@ goblin_default_config() {
   "intervalSeconds": 300,
   "provider": "claude",
   "providers": {
-    "claude": { "model": "sonnet", "bin": "" },
-    "codex":  { "model": "", "reasoningEffort": "medium", "bin": "" },
+    "claude": { "model": "sonnet", "effort": "", "bin": "" },
+    "codex":  { "model": "", "effort": "", "reasoningEffort": "medium", "bin": "" },
     "cursor": { "model": "", "bin": "" }
   },
   "providerFallback": [],
@@ -44,6 +44,7 @@ goblin_default_config() {
   "refsForbidden": false,
   "refsForbiddenAt": 0,
   "update": { "notify": true, "checkEverySecs": 86400 },
+  "telemetry": { "enabled": false, "id": "" },
   "maxReviewsPerDay": 20,
   "skipIfHumanReviewed": true,
   "skip": {
@@ -192,4 +193,35 @@ goblin_login() {
   local l; l="$(cfg_get '.identity.githubLogin' '')"
   if [ -z "$l" ]; then l="$(gh api user --jq .login 2>/dev/null)"; fi
   printf '%s' "$l"
+}
+
+# --- reasoning effort -------------------------------------------------------------
+# How hard the model thinks before it answers: more is slower and dearer, and usually
+# finds more. Claude and Codex take a level; Cursor folds effort into its model names
+# (each effort is its own model in the list), so it has none here.
+#
+# provider_effort_levels <name>  -> the levels that provider accepts, one per line
+provider_effort_levels() {
+  case "$1" in
+    claude) printf '%s\n' low medium high xhigh max ;;
+    codex)  printf '%s\n' minimal low medium high xhigh ;;
+    *)      return 0 ;;
+  esac
+}
+
+# provider_effort_valid <name> <level> — empty is valid and means "the provider's own".
+provider_effort_valid() {
+  [ -z "$2" ] && return 0
+  provider_effort_levels "$1" | grep -qxF -- "$2"
+}
+
+# provider_effort <name> — the effort a review by <name> runs at right now (config plus
+# any per-review overlay); empty when the provider decides. Codex's older
+# `reasoningEffort` key still counts, and its default was always medium.
+provider_effort() {
+  local name="$1" eff=""
+  eff="$(cfg_get ".providers.$name.effort" '')"
+  if [ -z "$eff" ] && [ "$name" = codex ]; then eff="$(cfg_get '.providers.codex.reasoningEffort' 'medium')"; fi
+  provider_effort_valid "$name" "$eff" || eff=""
+  printf '%s' "$eff"
 }

@@ -19,6 +19,7 @@ struct GeneralPane: View {
         SettingsPage(title: "General", subtitle: "Who the Goblin reviews as, and when he is on duty.") {
             account
             duty
+            privacy
             manual
             shortcuts
         }
@@ -58,6 +59,23 @@ struct GeneralPane: View {
                         Task { await store.perform(.fixAccount, success: "gh is now using @\(s.login).") }
                     }.buttonStyle(.goblinPrimarySmall)
                 }
+            }
+        }
+    }
+
+    // MARK: privacy
+
+    private var privacy: some View {
+        SettingsGroup(title: "Privacy") {
+            SettingRow(title: "Share anonymous usage counts",
+                       hint: s.settings.telemetry
+                        ? "On. Per review: which AI, model and effort, whether it posted or failed, and how long it took. Never repos, PRs, people or code. `goblin telemetry show` prints the last one."
+                        : "Off. Nothing about your use leaves this Mac. Turn on to help show which models and efforts people actually use.",
+                       last: true) {
+                Toggle("", isOn: Binding(
+                    get: { s.settings.telemetry },
+                    set: { on in Task { await store.perform(.setTelemetry(on), success: on ? "Sharing anonymous counts." : "Not sharing anything.") } }))
+                    .toggleStyle(.switch).labelsHidden().tint(Theme.accent)
             }
         }
     }
@@ -252,6 +270,7 @@ private struct ProviderCard: View {
     let store: AppStore
     let provider: ProviderInfo
     private var saved: String { store.snapshot.settings.models[provider.name] ?? provider.model }
+    private var savedEffort: String { store.snapshot.settings.efforts[provider.name] ?? "" }
     private var isCurrent: Bool { store.snapshot.providerId == provider.name }
 
     var body: some View {
@@ -302,11 +321,27 @@ private struct ProviderCard: View {
         else { Chip(text: "Not installed", symbol: "arrow.down.circle", tint: .secondary) }
     }
 
-    private var modelRow: some View {
+    @ViewBuilder private var modelRow: some View {
         HStack(spacing: 8) {
             Text("Model").font(.system(size: 12.5, weight: .medium)).foregroundStyle(.secondary).frame(width: 46, alignment: .leading)
             ModelMenu(store: store, provider: provider.name,
                       selection: Binding(get: { saved }, set: { choose($0) }))
+        }
+        if !ProviderInfo.effortLevels(provider.name).isEmpty {
+            HStack(spacing: 8) {
+                Text("Effort").font(.system(size: 12.5, weight: .medium)).foregroundStyle(.secondary).frame(width: 46, alignment: .leading)
+                EffortMenu(provider: provider.name, selection: Binding(get: { savedEffort }, set: { chooseEffort($0) }))
+            }
+            Text("How hard it thinks before answering. Higher finds more and takes longer.")
+                .font(.system(size: 11)).foregroundStyle(.tertiary)
+        }
+    }
+
+    private func chooseEffort(_ effort: String) {
+        guard effort != savedEffort, let id = ProviderId(rawValue: provider.name) else { return }
+        Task {
+            await store.perform(.setProviderEffort(provider: id, effort: effort),
+                                success: effort.isEmpty ? "\(provider.displayName) picks its own effort." : "Effort set to \(ProviderInfo.effortLabel(effort)).")
         }
     }
 

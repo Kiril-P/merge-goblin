@@ -11,9 +11,12 @@ GOBLIN_SLUG="goblin"               # cli name, state dir, ref namespace, label
 # The ONLY place the version is written. build.sh stamps it into Info.plist and the
 # DMG name, the release workflow refuses a tag that disagrees with it, and the app
 # reads it back from the engine. Bump it here and nowhere else.
-GOBLIN_VERSION="0.5.2"
+GOBLIN_VERSION="0.6.0"
 GOBLIN_TAGLINE="guards the merge button"
 GOBLIN_EMOJI="👺"
+# Where opt-in anonymous usage counts go (lib/telemetry.sh). Empty: this build has no
+# collector, so switching telemetry on sends nothing anywhere. https:// only.
+GOBLIN_TELEMETRY_URL=""
 GOBLIN_REPO_URL="https://github.com/Kiril-P/merge-goblin"
 # Derived, never written twice: the update check asks GitHub for this repo's
 # brand.sh and compares the GOBLIN_VERSION it finds against the one above.

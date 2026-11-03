@@ -38,6 +38,8 @@ provider_claude_review() {
   local bin model to t0 rc=0
   bin="$(provider_claude_bin)" || { GOBLIN_P_ERRKIND=other; GOBLIN_P_ERRMSG="claude not found"; return 1; }
   model="$(cfg_get '.providers.claude.model' 'sonnet')"
+  local eff; eff="$(provider_effort claude)"
+  GOBLIN_P_EFFORT="$eff"
   to="$(cfg_get '.timeoutSecs' 900)"
   t0="$(now_epoch)"
 
@@ -68,6 +70,7 @@ provider_claude_review() {
     ( cd "$cwd" || exit 1
       run_with_timeout "$to" "$bin" -p \
         --model "$model" \
+        ${eff:+--effort "$eff"} \
         --output-format json \
         --json-schema "$(cat "$schema")" \
         --tools "Read,Grep,Glob" \
@@ -82,6 +85,7 @@ provider_claude_review() {
     ( cd "$cwd" || exit 1
       run_with_timeout "$to" "$bin" -p \
         --model "$model" \
+        ${eff:+--effort "$eff"} \
         --output-format json \
         --json-schema "$(cat "$schema")" \
         --tools "" \

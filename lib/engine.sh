@@ -388,7 +388,7 @@ engine_pr() {
   prior="$(gh_prior_review "$slug" "$pr")"
   if [ -n "$prior" ]; then
     last_sha="$(printf '%s' "$prior" | jq -r '.m.headSha // ""')"
-    if [ "$last_sha" = "$head" ] && [ "$FORCE" != true ]; then
+    if [ "$last_sha" = "$head" ] && [ "$FORCE" != true ] && [ -z "$ONLY_PR" ]; then
       log "  #$pr: already reviewed at $(trunc "$head" 7)"
       ledger_add "$key"
       return 0
@@ -520,7 +520,7 @@ engine_fail() {
   # A signed-out AI CLI is not a signed-out GitHub, which jobs already call "auth".
   [ "$kind" = auth ] && kind=provider_auth
   words="$(failure_words "$kind" "$provider")"
-  events_append failed "$pr" "$title" "$url" "$cost" "$kind" "$slug" "$provider" "$model"
+  events_append failed "$pr" "$title" "$url" "$cost" "$kind" "$slug" "$provider" "$model" "${GOBLIN_P_EFFORT:-}"
   # A usage limit is not this PR's fault: it must not count towards the PR's backoff
   # (or the menu bar would call it stuck). The provider's cooldown covers it.
   if [ "$kind" = quota ]; then
@@ -756,7 +756,7 @@ engine_save_preview() {
       }' > "$out/review.json"
 
   local counts; counts="$(render_counts "$work/norm.json")"
-  events_append previewed "$pr" "$title" "$url" "$cost" "" "$slug" "$provider" "$model"
+  events_append previewed "$pr" "$title" "$url" "$cost" "" "$slug" "$provider" "$model" "${GOBLIN_P_EFFORT:-}"
   log "  #$pr: preview ready — $counts"
   notify posted "$GOBLIN_NAME finished 👺" "#$pr is ready to read — $counts" ready
   job_phase ready "$(jq -nc --arg c "$counts" --argjson n "$(jq '.findings|length' "$work/norm.json")" \
@@ -909,7 +909,7 @@ engine_publish() {
 
   ledger_add "${pr}:${head}"
   attempt_clear "${pr}:${head}"
-  events_append posted "$pr" "$title" "$url" "$cost" "" "$slug" "$provider" "$model"
+  events_append posted "$pr" "$title" "$url" "$cost" "" "$slug" "$provider" "$model" "${GOBLIN_P_EFFORT:-}"
   REVIEWS_THIS_RUN=$((REVIEWS_THIS_RUN + 1))
   log "  #$pr: posted — $counts ($inline_n inline)${cost:+, \$$cost}"
   notify posted "$GOBLIN_NAME posted ✅" "#$pr — $counts"

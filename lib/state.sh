@@ -97,17 +97,18 @@ status_set() {
   fi
 }
 
-# events_append <status> <number> <title> <url> <cost> <reason> [repo] [provider] [model]
+# events_append <status> <number> <title> <url> <cost> <reason> [repo] [provider] [model] [effort]
 events_append() {
   local evstatus="$1" number="$2" title="$3" url="$4" cost="${5:-0}" reason="${6:-}"
-  local repo="${7:-}" provider="${8:-}" model="${9:-}"
+  local repo="${7:-}" provider="${8:-}" model="${9:-}" effort="${10:-}"
   goblin_ensure_dirs
   jq -nc --arg st "$evstatus" --argjson n "${number:-0}" --arg t "$title" \
      --arg u "$url" --argjson c "${cost:-0}" --arg r "$reason" \
-     --arg repo "$repo" --arg p "$provider" --arg m "$model" \
+     --arg repo "$repo" --arg p "$provider" --arg m "$model" --arg e "$effort" \
      --argjson at "$(now_epoch)" \
      '{at:$at, number:$n, title:$t, url:$u, costUsd:$c, status:$st, reason:$r,
-       repo:$repo, provider:$p, model:$m}' >> "$EVENTS" 2>/dev/null || true
+       repo:$repo, provider:$p, model:$m, effort:$e}' >> "$EVENTS" 2>/dev/null || true
+  command -v telemetry_review >/dev/null 2>&1 && telemetry_review "$evstatus" "$provider" "$model" "$effort" "$reason" "${GOBLIN_P_DURATION_MS:-0}" || true
 }
 
 ledger_has()  { grep -qxF "$1" "$LEDGER" 2>/dev/null; }
@@ -174,6 +175,7 @@ ui_state_write() {
     --arg version "$GOBLIN_VERSION" \
     --arg provider "$(cfg_get '.provider' 'claude')" \
     --arg model "$(cfg_get ".providers.$(cfg_get '.provider' 'claude').model" '')" \
+    --arg effort "$(provider_effort "$(cfg_get '.provider' 'claude')")" \
     --arg login "$(cfg_get '.identity.githubLogin' '')" \
     --arg ghActive "$(gh_active_account)" \
     --argjson cap "$(cfg_get '.budgetCapUsd' 0)" \
@@ -193,7 +195,10 @@ ui_state_write() {
         manualReviewMode, maxConcurrentJobs, lastRepo, providerFallback,
         notify,
         skip: {bots: (.skip.bots != false), docsOnly: (.skip.docsOnly == true)},
-        providers: (.providers | with_entries(.value |= {model}))
+        telemetry: {enabled: (.telemetry.enabled == true)},
+        providers: (.providers | to_entries | map(.value = {model: .value.model,
+          effort: ((.value.effort // "") as $e
+                   | if $e == "" and .key == "codex" then (.value.reasoningEffort // "medium") else $e end)}) | from_entries)
       }' '{}')" \
     --argjson running "$running" --argjson disabled "$disabled" \
     --argjson installed "$installed" \
@@ -210,7 +215,7 @@ ui_state_write() {
         latest: ($update.latest // ""), checkedAt: ($update.checkedAt // 0),
         url: ($update.url // "")
       },
-      provider: {id: $provider, model: $model},
+      provider: {id: $provider, model: $model, effort: $effort},
       identity: {login: $login, ghActive: $ghActive, ok: ($login == "" or $login == $ghActive)},
       budgetCapUsd: $cap, snoozeUntil: $snoozeUntil, enabled: $enabled,
       setup: {complete: $setup},

@@ -10,17 +10,30 @@ final class CommandTests: XCTestCase {
     func testReviewByNumberIsDetachedAndPreviewFirst() throws {
         let ref = try XCTUnwrap(PRRef.parse("2456"))
         let a = try argv(.review(ref: ref, repo: "acme/widgets", mode: .preview, focus: .full,
-                                 provider: nil, model: nil, force: false))
+                                 provider: nil, model: nil, effort: nil, force: false))
         XCTAssertEqual(a.prefix(3), ["review", "2456", "--detach"])
         XCTAssertTrue(a.contains("--preview"))
         XCTAssertFalse(a.contains("--post"))
         XCTAssertEqual(a.firstIndex(of: "--repo").map { a[$0 + 1] }, "acme/widgets")
     }
 
+    func testEffortIsPassedAndValidated() throws {
+        let ref = try XCTUnwrap(PRRef.parse("2456"))
+        let a = try argv(.review(ref: ref, repo: "acme/widgets", mode: .preview, focus: .full,
+                                 provider: .claude, model: nil, effort: "xhigh", force: false))
+        XCTAssertEqual(a.firstIndex(of: "--effort").map { a[$0 + 1] }, "xhigh")
+        XCTAssertThrowsError(try Command.review(ref: ref, repo: nil, mode: .preview, focus: .full,
+                                                provider: nil, model: nil, effort: "high; rm", force: false).validatedPlan())
+        XCTAssertEqual(try argv(.setProviderEffort(provider: .codex, effort: "minimal")).suffix(3), ["provider-effort", "codex", "minimal"])
+        XCTAssertThrowsError(try Command.setProviderEffort(provider: .claude, effort: "minimal").validatedPlan())
+        XCTAssertThrowsError(try Command.setProviderEffort(provider: .codex, effort: "max").validatedPlan())
+        XCTAssertNoThrow(try Command.setProviderEffort(provider: .claude, effort: "").validatedPlan())
+    }
+
     func testARefsOwnRepoBeatsTheRepoArgument() throws {
         let ref = try XCTUnwrap(PRRef.parse("acme/widgets#5"))
         let a = try argv(.review(ref: ref, repo: "other/repo", mode: .post, focus: .security,
-                                 provider: .codex, model: "gpt-5", force: true))
+                                 provider: .codex, model: "gpt-5", effort: "high", force: true))
         XCTAssertEqual(a[1], "acme/widgets#5")
         XCTAssertFalse(a.contains("--repo"))
         XCTAssertTrue(a.contains("--post") && a.contains("--force"))
@@ -44,9 +57,9 @@ final class CommandTests: XCTestCase {
     func testHostileValuesAreRefused() {
         let ref = PRRef.parse("1")!
         XCTAssertThrowsError(try Command.review(ref: ref, repo: "-x/y", mode: .preview, focus: .full,
-                                                provider: nil, model: nil, force: false).validatedPlan())
+                                                provider: nil, model: nil, effort: nil, force: false).validatedPlan())
         XCTAssertThrowsError(try Command.review(ref: ref, repo: nil, mode: .preview, focus: .full,
-                                                provider: nil, model: "a b; rm", force: false).validatedPlan())
+                                                provider: nil, model: "a b; rm", effort: nil, force: false).validatedPlan())
         XCTAssertThrowsError(try Command.postReview(job: "../etc").validatedPlan())
         XCTAssertThrowsError(try Command.repoAdd(slug: "no-slash").validatedPlan())
         XCTAssertThrowsError(try Command.repoAdd(slug: "--help/x").validatedPlan())

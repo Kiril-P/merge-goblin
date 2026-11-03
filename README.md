@@ -351,6 +351,17 @@ replace the global list. A repo's `provider`/`model` applies to scheduled and ma
 reviews alike. `goblin review --provider/--model` still wins for that one review. If the
 repo's provider isn't ready, he falls back to the global one and logs it.
 
+### Effort and telemetry
+
+`providers.claude.effort` (low, medium, high, xhigh, max) and `providers.codex.effort`
+(minimal, low, medium, high, xhigh) set how hard the model thinks; empty leaves it to the
+CLI (Codex's older `reasoningEffort` still counts). `goblin review --effort high` overrides
+it for one review. Cursor has no effort setting: pick the effort variant in its model list.
+
+`goblin telemetry on|off|show` controls optional anonymous usage counts, off by default.
+The exact fields are listed at the top of `lib/telemetry.sh`; `show` prints the last
+payload sent. Nothing identifying a repo, PR, person or code is ever included.
+
 ### What codex can read
 
 Codex reads code by running shell commands in its own macOS sandbox. `--sandbox read-only`

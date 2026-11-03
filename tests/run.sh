@@ -796,17 +796,18 @@ test_review_post_rejects_a_bad_edit_file() {
   review_env_done
 }
 
-test_review_skips_what_is_already_reviewed_unless_forced() {
+test_review_by_number_reviews_again_even_on_the_same_commit() {
   review_env
   export REVIEW_FAKE_PRIOR="aaaaaaa1111111"
   "$G" review 2456 --repo acme/widgets >/dev/null 2>&1
   local id; id="$(review_job_id)"
-  eq "skipped" "$(jq -r .phase "$GOBLIN_HOME/jobs/$id/job.json")"          || return 1
-  eq "already_reviewed" "$(jq -r .reason "$GOBLIN_HOME/jobs/$id/job.json")" || return 1
-  "$G" review 2456 --repo acme/widgets --force >/dev/null 2>&1
+  # Asking for it by number is asking for another one: the usual reason is that the
+  # author addressed the last review, sometimes without pushing a new commit.
+  eq "ready" "$(jq -r .phase "$GOBLIN_HOME/jobs/$id/job.json")" || return 1
+  "$G" review 2456 --repo acme/widgets >/dev/null 2>&1
   eq 2 "$(ls "$GOBLIN_HOME/jobs" | wc -l | tr -d ' ')" || return 1
   local ready; ready="$("$G" jobs --json | jq -r '[.[] | select(.phase=="ready")] | length')"
-  eq 1 "$ready" || return 1
+  eq 2 "$ready" || return 1
   review_env_done
 }
 
@@ -1917,6 +1918,9 @@ test_panel_contract_matches_the_app() {
       last-repo)       cmd_panel set "$k" acme/widgets >/dev/null 2>&1 || bad="$bad $k" ;;
       verdict-mode)    cmd_panel set "$k" comment   >/dev/null 2>&1 || bad="$bad $k" ;;
       provider-model)  cmd_panel set "$k" claude sonnet >/dev/null 2>&1 || bad="$bad $k" ;;
+      provider-effort) cmd_panel set "$k" claude high   >/dev/null 2>&1 || bad="$bad $k"
+                       cmd_panel set "$k" claude ""     >/dev/null 2>&1 || bad="$bad $k:default" ;;
+      telemetry)       cmd_panel set "$k" off           >/dev/null 2>&1 || bad="$bad $k" ;;
       allow-approve)   cmd_panel set "$k" false     >/dev/null 2>&1 || bad="$bad $k" ;;
       interval-minutes) cmd_panel set "$k" 15       >/dev/null 2>&1 || bad="$bad $k" ;;
       repo-provider)   cfg_repo_add o/n >/dev/null 2>&1
@@ -2080,7 +2084,7 @@ t "review: repo resolution"                 test_ref_repo_resolution
 t "review: preview posts nothing"           test_review_preview_posts_nothing
 t "review: post applies edits, no double count" test_review_post_applies_edits_and_does_not_double_count
 t "review: bad edit file is refused"        test_review_post_rejects_a_bad_edit_file
-t "review: skips already-reviewed unless forced" test_review_skips_what_is_already_reviewed_unless_forced
+t "review: by number reviews again, same commit too" test_review_by_number_reviews_again_even_on_the_same_commit
 t "review: closed PR is skipped"            test_review_closed_pr_is_skipped
 t "review: ambiguous bare number asks for a repo" test_review_needs_a_repo_when_ambiguous
 t "review: run --pr never fans out"         test_run_pr_never_fans_out_across_repos
@@ -2163,6 +2167,14 @@ t "quota: mid-review, the fallback steps in" test_a_usage_limit_mid_review_uses_
 t "fail: says what happened and when"      test_a_failure_says_what_and_when
 t "pause: says how much and until when, dismissable" test_pauses_say_how_much_and_until_when
 t "fail: a timeout is called a timeout"     test_a_timeout_is_called_a_timeout
+
+. "$ROOT/tests/effort_test.sh"
+t "effort: reaches claude only when set"      test_effort_reaches_claude_only_when_set
+t "effort: validated per provider"            test_effort_is_validated_per_provider
+t "effort: codex falls back to the old key"   test_codex_effort_falls_back_to_the_old_key
+t "effort: the state says what is in use"     test_state_shows_the_effort_in_use
+t "telemetry: off by default, sends nothing"  test_telemetry_is_off_and_sends_nothing_by_default
+t "telemetry: no repo, PR or person in it"    test_telemetry_payload_has_no_repo_pr_or_person
 
 printf '\n  %s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -gt 0 ] && { printf '  failed:%b\n\n' "$FAILED"; exit 1; }
