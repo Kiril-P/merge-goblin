@@ -163,6 +163,7 @@ enum Command: Equatable {
     case pause
     case resume
     case snooze(kind: SnoozeKind)
+    case dismissFailures                 // "seen it": quiet until something new fails
 
     // reviewing
     case reviewNow
@@ -170,7 +171,7 @@ enum Command: Equatable {
 
     // review one PR on demand (see lib/review.sh)
     case review(ref: PRRef, repo: String?, mode: ReviewMode, focus: ReviewFocus,
-                provider: ProviderId?, model: String?, force: Bool)
+                provider: ProviderId?, model: String?, effort: String? = nil, force: Bool)
     case resolve(ref: PRRef, repo: String?)
     case postReview(job: String)         // publishes jobs/<id>/edits.json over the preview
     case cancelJob(job: String)          // stops a running job, or discards a waiting review
@@ -195,6 +196,8 @@ enum Command: Equatable {
     // provider
     case setProvider(ProviderId)
     case setProviderModel(provider: ProviderId, model: String)   // ^[A-Za-z0-9._:-]{0,64}$
+    case setProviderEffort(provider: ProviderId, effort: String) // one of ProviderInfo.effortLevels, or ""
+    case setTelemetry(Bool)
     case setProviderFallback(ProviderId?)   // who reviews while the main one is at its limit
 
     // repos
@@ -249,7 +252,7 @@ enum Command: Equatable {
     /// slug of "-x/y", a search query of "--help") from turning into a flag.
     static let allowedFlagLiterals: Set<String> = [
         "--json", "--fix", "--refresh", "--limit", "--query",
-        "--detach", "--post", "--preview", "--force", "--repo", "--focus", "--provider", "--model", "--saved-edits", "--days",
+        "--detach", "--post", "--preview", "--force", "--repo", "--focus", "--provider", "--model", "--effort", "--saved-edits", "--days",
         "--relaunch",
     ]
 
@@ -263,6 +266,8 @@ enum Command: Equatable {
             return .cli(argv: ["pause"], timeout: .mutation, mutating: true, json: false)
         case .resume:
             return .cli(argv: ["resume"], timeout: .mutation, mutating: true, json: false)
+        case .dismissFailures:
+            return .cli(argv: ["dismiss-failures"], timeout: .mutation, mutating: true, json: false)
         case .snooze(let kind):
             let verb: String
             switch kind {
@@ -279,7 +284,7 @@ enum Command: Equatable {
         case .dryRun:
             return .cli(argv: ["panel", "dry-run"], timeout: .mutation, mutating: true, json: false)
 
-        case .review(let ref, let repo, let mode, let focus, let provider, let model, let force):
+        case .review(let ref, let repo, let mode, let focus, let provider, let model, let effort, let force):
             // --detach: the app must never be the parent of a review. Quitting the app
             // would take it with it, and a review is minutes long.
             var argv = ["review", ref.canonical, "--detach", "--json",
@@ -287,6 +292,7 @@ enum Command: Equatable {
             if let repo, ref.slug == nil { argv += ["--repo", repo] }
             if let provider { argv += ["--provider", provider.rawValue] }
             if let model, !model.isEmpty { argv += ["--model", model] }
+            if let effort, !effort.isEmpty { argv += ["--effort", effort] }
             if force { argv.append("--force") }
             return .cli(argv: argv, timeout: .mutation, mutating: true, json: true)
         case .resolve(let ref, let repo):
@@ -334,6 +340,10 @@ enum Command: Equatable {
             return .cli(argv: ["provider", "use", id.rawValue], timeout: .discovery, mutating: true, json: false)
         case .setProviderModel(let provider, let model):
             return Command.panelSet("provider-model", provider.rawValue, model)
+        case .setProviderEffort(let provider, let effort):
+            return Command.panelSet("provider-effort", provider.rawValue, effort)
+        case .setTelemetry(let on):
+            return Command.panelSet("telemetry", on ? "on" : "off")
 
         case .repoAdd(let slug):
             return .cli(argv: ["repos", "add", slug], timeout: .mutation, mutating: true, json: false)
@@ -424,9 +434,14 @@ enum Command: Equatable {
         // Structured arguments are checked here, before the argv is built, so that a
         // Command holding a bad repo or job id is refused rather than run.
         switch self {
-        case .review(_, let repo, _, _, _, let model, _):
+        case .review(_, let repo, _, _, _, let model, let effort, _):
             if let repo, !Pattern.repoSlug.accepts(repo) { throw CommandRefusal("repo is not in the accepted format") }
             if let model, !Pattern.model.accepts(model) { throw CommandRefusal("model is not in the accepted format") }
+            // The engine checks it against the provider that ends up running the review.
+            if let effort, !effort.isEmpty,
+               !(ProviderInfo.effortLevels("claude") + ProviderInfo.effortLevels("codex")).contains(effort) {
+                throw CommandRefusal("effort is not a known level")
+            }
         case .resolve(_, let repo):
             if let repo, !Pattern.repoSlug.accepts(repo) { throw CommandRefusal("repo is not in the accepted format") }
         case .postReview(let job), .cancelJob(let job):
@@ -440,6 +455,10 @@ enum Command: Equatable {
             if !Pattern.githubLogin.accepts(login) { throw CommandRefusal("login is not in the accepted format") }
         case .setProviderModel(_, let model):
             if !Pattern.model.accepts(model) { throw CommandRefusal("model is not in the accepted format") }
+        case .setProviderEffort(let provider, let effort):
+            if !effort.isEmpty, !ProviderInfo.effortLevels(provider.rawValue).contains(effort) {
+                throw CommandRefusal("effort is not a level this provider has")
+            }
         case .stats(let days, _):
             if !(1...365).contains(days) { throw CommandRefusal("days is out of range") }
         case .repoSearch(let q, let limit):

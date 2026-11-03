@@ -53,6 +53,10 @@ struct IdentityLine: View {
                 providerMenu
                 dot
                 modelMenu
+                if !ProviderInfo.effortLevels(s.providerId).isEmpty {
+                    dot
+                    effortMenu
+                }
             }
             .font(.system(size: 11.5))
             .padding(.leading, -4)
@@ -137,6 +141,30 @@ struct IdentityLine: View {
             Button("Reviewer settings…") { windows.showSettings(.reviewer) }
         }
         .task(id: s.providerId) { await store.loadModels(s.providerId) }
+    }
+
+    private var effortMenu: some View {
+        let current = s.providerEffort
+        return InlineMenu(text: current.isEmpty ? "default effort" : "\(ProviderInfo.effortLabel(current).lowercased()) effort",
+                          help: "How hard the model thinks — click to change") {
+            Section("Effort") {
+                Button { setEffort("") } label: { check(current.isEmpty, "Provider default") }
+                ForEach(ProviderInfo.effortLevels(s.providerId), id: \.self) { level in
+                    Button { setEffort(level) } label: { check(level == current, ProviderInfo.effortLabel(level)) }
+                }
+            }
+            Divider()
+            Button("Reviewer settings…") { windows.showSettings(.reviewer) }
+        }
+    }
+
+    private func setEffort(_ effort: String) {
+        guard effort != s.providerEffort else { return }
+        Task {
+            await store.perform(.setProviderEffort(provider: provider, effort: effort),
+                                success: effort.isEmpty ? "\(s.providerId.capitalized) picks its own effort."
+                                                        : "Reviews now think at \(ProviderInfo.effortLabel(effort).lowercased()) effort.")
+        }
     }
 
     private func set(_ model: String) {

@@ -423,6 +423,10 @@ struct BarProblem: Equatable {
     let detail: String
     let action: Action
 
+    /// failing and stuck are past reviews: someone can say "seen it". The rest stay
+    /// until they are fixed.
+    var dismissable: Bool { kind == "failing" || kind == "stuck" }
+
     init?(json: JSON) {
         guard let t = json["title"].string, !t.isEmpty else { return nil }
         kind = json["kind"].string("")
@@ -471,6 +475,23 @@ struct ProviderInfo: Identifiable, Equatable {
         default: return note
         }
     }
+    /// The reasoning-effort levels the provider's CLI accepts, lowest first. Empty = it has
+    /// no such setting (Cursor folds effort into its model names). Mirrors
+    /// provider_effort_levels in lib/config.sh, which is what actually validates.
+    static func effortLevels(_ name: String) -> [String] {
+        switch name {
+        case "claude": return ["low", "medium", "high", "xhigh", "max"]
+        case "codex": return ["minimal", "low", "medium", "high", "xhigh"]
+        default: return []
+        }
+    }
+    static func effortLabel(_ level: String) -> String {
+        switch level {
+        case "xhigh": return "Extra high"
+        case "": return "Provider default"
+        default: return level.capitalized
+        }
+    }
     /// Only used when `goblin provider models` fails: a short list that is always valid.
     static func fallbackModels(_ name: String) -> [String] {
         name == "claude" ? ["sonnet", "opus", "haiku"] : []
@@ -509,6 +530,7 @@ struct Snapshot: Equatable {
     var identityOK = true
     var providerId = "claude"
     var providerModel = ""
+    var providerEffort = ""
     var reviewsToday = 0
     var reviewsTotal = 0
     var spendToday = 0.0
@@ -554,6 +576,8 @@ struct Snapshot: Equatable {
         var skipBots = true
         var skipDocsOnly = false
         var models: [String: String] = [:]
+        var efforts: [String: String] = [:]
+        var telemetry = false
     }
 
     /// A watched repo. `provider` empty = reviewed by the global provider; `model` empty =
@@ -568,7 +592,7 @@ struct Snapshot: Equatable {
     static func == (a: Snapshot, b: Snapshot) -> Bool {
         a.loaded == b.loaded && a.state == b.state && a.glyph == b.glyph && a.barCount == b.barCount
             && a.statusLine == b.statusLine && a.login == b.login && a.providerId == b.providerId
-            && a.providerModel == b.providerModel && a.reviewsToday == b.reviewsToday
+            && a.providerModel == b.providerModel && a.providerEffort == b.providerEffort && a.reviewsToday == b.reviewsToday
             && a.spendToday == b.spendToday && a.enabled == b.enabled && a.setupComplete == b.setupComplete
             && a.snoozeUntil == b.snoozeUntil && a.waiting == b.waiting && a.jobsActive == b.jobsActive
             && a.jobsReady == b.jobsReady && a.settings == b.settings && a.updateAvailable == b.updateAvailable
@@ -605,6 +629,7 @@ struct Snapshot: Equatable {
         identityOK = ui["identity"]["ok"].bool(true)
         providerId = ui["provider"]["id"].string("claude")
         providerModel = ui["provider"]["model"].string("")
+        providerEffort = ui["provider"]["effort"].string("")
         reviewsToday = ui["reviews"]["today"].int(0)
         reviewsTotal = ui["reviews"]["total"].int(0)
         spendToday = ui["spendUsd"]["today"].double(0)
@@ -653,7 +678,11 @@ struct Snapshot: Equatable {
         st.notifySound = s["notify"]["sound"].bool(true)
         st.skipBots = s["skip"]["bots"].bool(true)
         st.skipDocsOnly = s["skip"]["docsOnly"].bool(false)
-        for (k, v) in (s["providers"].object ?? [:]) { st.models[k] = JSON(v)["model"].string("") }
+        for (k, v) in (s["providers"].object ?? [:]) {
+            st.models[k] = JSON(v)["model"].string("")
+            st.efforts[k] = JSON(v)["effort"].string("")
+        }
+        st.telemetry = s["telemetry"]["enabled"].bool(false)
         settings = st
     }
 }

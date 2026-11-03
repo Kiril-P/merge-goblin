@@ -43,7 +43,8 @@ provider_codex_review() {
   local bin model eff to t0 rc=0
   bin="$(provider_codex_bin)" || { GOBLIN_P_ERRKIND=other; GOBLIN_P_ERRMSG="codex not found"; return 1; }
   model="$(cfg_get '.providers.codex.model' '')"
-  eff="$(cfg_get '.providers.codex.reasoningEffort' 'medium')"
+  eff="$(provider_effort codex)"
+  GOBLIN_P_EFFORT="$eff"
   to="$(cfg_get '.timeoutSecs' 900)"
   t0="$(now_epoch)"
 

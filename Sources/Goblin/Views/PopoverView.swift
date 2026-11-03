@@ -365,6 +365,19 @@ struct ProblemBanner: View {
                     .padding(.top, 2)
                 }
                 Spacer(minLength: 0)
+                // Failed reviews are history once someone has seen them; account, schedule
+                // and health problems are still broken, so only fixing them clears those.
+                if problem.dismissable {
+                    Button {
+                        Task { await store.perform(.dismissFailures) }
+                    } label: {
+                        Image(systemName: "xmark").font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.secondary).frame(width: 18, height: 18).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Dismiss until something new fails")
+                    .accessibilityLabel("Dismiss")
+                }
             }
         }
         .accessibilityElement(children: .contain)

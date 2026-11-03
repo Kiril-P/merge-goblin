@@ -25,7 +25,8 @@ provider_classify_error() {
   if printf '%s' "$t" | grep -qE '(^|[^0-9])429([^0-9]|$)'; then echo quota; return 0; fi
   case "$t" in
     *"rate limit"*|*"rate_limit"*|*"quota"*|*"usage limit"*|*"usage_limit"*|*"hit your limit"*|\
-    *"limit reached"*|*"too many requests"*|*"out of credits"*|*"credit balance"*) echo quota; return 0 ;;
+    *"limit reached"*|*"too many requests"*|*"out of credits"*|*"credit balance"*|*"out of usage"*|*"increase your limit"*|\
+    *"increase limits"*|*"actionrequirederror"*) echo quota; return 0 ;;
     *"not logged in"*|*"unauthorized"*|*"unauthenticated"*|*"authentication"*|*"invalid api key"*|\
     *"please log in"*|*"please login"*|*"login required"*|*"/login"*|*"session expired"*) echo auth; return 0 ;;
   esac

@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.6.0
+
+You can now see, and choose, how hard the AI thinks; a manual review is always a
+review; and there is an optional, anonymous way to share which models get used.
+
+- **Effort, chosen and shown.** The header now reads `@you · codex · GPT-6-Luna ·
+  medium effort`, and each word is a menu. Claude takes low / medium / high / extra
+  high / max, Codex minimal through extra high; Cursor has none because each Cursor
+  effort is its own model in the model list. Set it per provider in Settings › Reviewer,
+  or for one review under Options. Until now Claude ran on whatever its CLI defaulted
+  to and Codex on a `reasoningEffort` setting nothing in the app could change.
+  `goblin review --effort E` does the same from the terminal. An effort that doesn't
+  fit the provider that ends up running the review (a fallback, a repo's own provider)
+  is dropped, not passed on.
+- **Review by number means again.** Typing a PR you already reviewed used to stop at
+  "The Goblin already reviewed this exact commit", which is exactly when you want
+  another one: you've addressed the first. It now runs. What was posted before and
+  what you declined are still given to the model, so it doesn't repeat itself. Closed
+  PRs and lockfile-only PRs still ask for "Review anyway".
+- **Optional anonymous usage counts, off by default.** Settings › General › Privacy.
+  Per review it can send: a random install id, version, macOS major version, CPU,
+  provider, model, effort, posted/previewed/failed, a failure kind, and how long it
+  took. Never a repo, PR, title, login or any code. `goblin telemetry show` prints the
+  last payload byte for byte. This build has no collector configured
+  (`GOBLIN_TELEMETRY_URL` in `lib/brand.sh`), so turning it on sends nothing yet.
+- **More usage-limit wording recognised** ("out of usage", "increase your limit",
+  Codex's ActionRequiredError), so those rest the provider instead of failing as "other".
+
 ## 0.5.2
 
 When something goes wrong, the Goblin now says what happened, when it tries again,

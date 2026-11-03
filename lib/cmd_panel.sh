@@ -172,6 +172,17 @@ _panel_set() {
       mdl="$(_panel_model "$v2")"   || { echo "invalid model name" >&2; return 2; }
       cfg_set --arg p "$pid" --arg m "$mdl" '.providers[$p].model = $m' ;;
 
+    effort|provider-effort)
+      # <claude|codex> <level|""> — "" hands the choice back to the provider.
+      local pid eff
+      pid="$(_panel_provider "$v")" || { echo "unknown provider" >&2; return 2; }
+      eff="$v2"
+      provider_effort_valid "$pid" "$eff" || { echo "$pid has no such effort level" >&2; return 2; }
+      cfg_set --arg p "$pid" --arg e "$eff" '.providers[$p].effort = $e' ;;
+
+    telemetry)
+      case "$v" in on) telemetry_enable ;; off) telemetry_disable ;; *) echo "telemetry: on or off" >&2; return 2 ;; esac ;;
+
     identity)
       local l; l="$(_panel_login "$v")" || { echo "invalid github login" >&2; return 2; }
       cfg_set --arg l "$l" '.identity.githubLogin = $l' ;;

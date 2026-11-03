@@ -269,7 +269,7 @@ struct ReviewField: View {
                 HStack {
                     Picker("Reviewer", selection: Binding(
                         get: { input.options.provider?.rawValue ?? "" },
-                        set: { input.options.provider = ProviderId(rawValue: $0); input.options.model = "" })) {
+                        set: { input.options.provider = ProviderId(rawValue: $0); input.options.model = ""; input.options.effort = "" })) {
                         Text("Default (\(store.snapshot.providerId.capitalized))").tag("")
                         ForEach(store.providers.filter(\.ready)) { p in Text(p.displayName).tag(p.name) }
                     }
@@ -278,9 +278,15 @@ struct ReviewField: View {
                             Text("Model")
                             ModelMenu(store: store, provider: p.name, selection: $input.options.model, defaultLabel: "Default")
                         }
+                        if !ProviderInfo.effortLevels(p.name).isEmpty {
+                            HStack {
+                                Text("Effort")
+                                EffortMenu(provider: p.name, selection: $input.options.effort, defaultLabel: "Default")
+                            }
+                        }
                     }
                 }
-                Toggle("Review anyway, even if already reviewed or closed", isOn: $input.options.force)
+                Toggle("Review anyway, even if the PR is closed or would normally be skipped", isOn: $input.options.force)
                     .toggleStyle(.checkbox).font(.system(size: 12))
             }
             .font(.system(size: 12))

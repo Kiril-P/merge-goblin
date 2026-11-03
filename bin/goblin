@@ -46,6 +46,8 @@ GOBLIN_APP="${GOBLIN_APP:-$(cd "$(dirname "$_self")/.." && pwd)}"
 # of the above have to exist by the time it is defined.
 # shellcheck source=lib/state.sh
 . "$GOBLIN_APP/lib/state.sh"
+# shellcheck source=lib/telemetry.sh
+. "$GOBLIN_APP/lib/telemetry.sh"
 
 need() { command -v "$1" >/dev/null 2>&1 || { echo "$GOBLIN_SLUG: missing dependency '$1'" >&2; exit 1; }; }
 need jq
@@ -57,6 +59,7 @@ $GOBLIN_EMOJI $GOBLIN_NAME v$GOBLIN_VERSION — $GOBLIN_TAGLINE
   goblin ui                        open the control panel (everything is here)
   goblin status [--json]              current state, stats and spend
   goblin doctor [--fix] [--json]      diagnose everything; --fix repairs the safe ones
+  goblin telemetry [on|off|show]      optional anonymous usage counts (off by default)
   goblin review <ref> [--post]        review one PR (2456, owner/repo#2456 or a URL);
           [--repo S] [--focus F]      waits in preview until you post it (goblin post)
   goblin post <job> | cancel <job>    publish a waiting review / stop or discard one
@@ -65,6 +68,7 @@ $GOBLIN_EMOJI $GOBLIN_NAME v$GOBLIN_VERSION — $GOBLIN_TAGLINE
           [--plan] [--force]       --plan = dry run (posts nothing)
   goblin on | off                     master switch (off survives reboot)
   goblin pause | resume | toggle      temporary stop (agent stays scheduled)
+  goblin dismiss-failures             hide the failure warning until something new fails
   goblin snooze 1h|tomorrow|<secs>|clear
   goblin budget [show|off|<usd>]      daily spend cap
   goblin repos [list|add SLUG|rm SLUG|enable SLUG|disable SLUG]
@@ -112,10 +116,11 @@ case "$cmd" in
   ui|open)  . "$LIB_DIR/app.sh";         cmd_ui "$@" ;;
   stats)    . "$LIB_DIR/stats.sh";       cmd_stats "$@" ;;
   update)   . "$LIB_DIR/update.sh";      cmd_update "$@" ;;
+  telemetry) cmd_telemetry "$@" ;;
   version)  echo "$GOBLIN_NAME $GOBLIN_VERSION" ;;
   help|-h|--help) usage ;;
   # everything else is a small control verb
-  on|off|pause|resume|toggle|toggle-power|snooze|budget|repos|repo|provider|fleet|config|log|agent|fix-account|\
+  on|off|pause|resume|dismiss-failures|toggle|toggle-power|snooze|budget|repos|repo|provider|fleet|config|log|agent|fix-account|\
   run-now|snooze1h|snoozetomorrow|clearsnooze|budgetoff|budget2|budget5|budget10|set-budget|disable-agent|enable-agent)
             . "$LIB_DIR/cmd_ctl.sh";     cmd_ctl "$cmd" "$@" ;;
   *)        echo "$GOBLIN_SLUG: unknown command '$cmd'" >&2; usage >&2; exit 2 ;;

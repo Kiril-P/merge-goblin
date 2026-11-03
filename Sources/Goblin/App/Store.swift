@@ -77,6 +77,7 @@ struct ReviewOptions: Equatable {
     var focus: ReviewFocus = .full
     var provider: ProviderId? = nil       // nil = the configured one
     var model: String = ""
+    var effort: String = ""
     var force = false
     var repo: String? = nil               // only used when the ref is a bare number
 }
@@ -590,6 +591,7 @@ final class AppStore {
             let out = try await CLI.shared.run(.review(
                 ref: ref, repo: options.repo, mode: mode, focus: options.focus,
                 provider: options.provider, model: options.model.isEmpty ? nil : options.model,
+                effort: options.effort.isEmpty ? nil : options.effort,
                 force: options.force))
             let j = JSON.parse(out.stdout)
             reload()

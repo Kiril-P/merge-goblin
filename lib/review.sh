@@ -134,7 +134,7 @@ cmd_resolve() {
 }
 
 cmd_review() {
-  local ref="" repo="" mode="" force=false provider="" model="" focus=full detach=false json=false run_job=""
+  local ref="" repo="" mode="" force=false provider="" model="" effort="" focus=full detach=false json=false run_job=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --repo)     repo="${2:-}"; shift $(( $# > 1 ? 2 : 1 )) ;;
@@ -143,6 +143,7 @@ cmd_review() {
       --force)    force=true; shift ;;
       --provider) provider="${2:-}"; shift $(( $# > 1 ? 2 : 1 )) ;;
       --model)    model="${2:-}"; shift $(( $# > 1 ? 2 : 1 )) ;;
+      --effort)   effort="${2:-}"; shift $(( $# > 1 ? 2 : 1 )) ;;
       --focus)    focus="${2:-}"; shift $(( $# > 1 ? 2 : 1 )) ;;
       --detach)   detach=true; shift ;;
       --json)     json=true; shift ;;
@@ -160,7 +161,7 @@ cmd_review() {
     review_run_job "$run_job"; return $?
   fi
 
-  [ -n "$ref" ] || { echo "usage: goblin review <ref> [--repo owner/name] [--post|--preview] [--force] [--focus full|security|summary] [--provider P] [--model M] [--detach] [--json]" >&2; return 2; }
+  [ -n "$ref" ] || { echo "usage: goblin review <ref> [--repo owner/name] [--post|--preview] [--force] [--focus full|security|summary] [--provider P] [--model M] [--effort E] [--detach] [--json]" >&2; return 2; }
 
   case "$focus" in full|security|summary) ;; *) ref_fail "$json" bad_option "--focus must be full, security or summary."; return 2 ;; esac
   if [ -n "$provider" ]; then
@@ -168,6 +169,11 @@ cmd_review() {
   fi
   if [ -n "$model" ]; then
     printf '%s' "$model" | grep -qE '^[A-Za-z0-9._:-]{1,64}$' || { ref_fail "$json" bad_option "that is not a model name."; return 2; }
+  fi
+  if [ -n "$effort" ]; then
+    # An effort belongs to a provider, so it needs one: the named one, else the configured one.
+    local eprov="${provider:-$(cfg_get '.provider' claude)}"
+    provider_effort_valid "$eprov" "$effort" || { ref_fail "$json" bad_option "$eprov has no effort level \"$effort\" (try: $(provider_effort_levels "$eprov" | tr '\n' ' '))."; return 2; }
   fi
   [ -n "$mode" ] || mode="$(cfg_get '.manualReviewMode' preview)"
   case "$mode" in post|preview) ;; *) mode=preview ;; esac
@@ -178,10 +184,10 @@ cmd_review() {
   id="$(job_new_id)"; dir="$(job_dir_of "$id")"
   mkdir -p "$dir" || return 1
   job_write "$id" "$(jq -nc --arg id "$id" --arg repo "$REF_SLUG" --argjson n "$REF_NUM" \
-    --arg mode "$mode" --arg prov "$provider" --arg model "$model" --arg focus "$focus" \
+    --arg mode "$mode" --arg prov "$provider" --arg model "$model" --arg effort "$effort" --arg focus "$focus" \
     --argjson force "$force" --argjson at "$(now_epoch)" \
     '{id:$id, repo:$repo, number:$n, title:"", url:("https://github.com/" + $repo + "/pull/" + ($n|tostring)),
-      phase:"queued", mode:$mode, provider:$prov, model:$model, focus:$focus, force:$force,
+      phase:"queued", mode:$mode, provider:$prov, model:$model, effort:$effort, focus:$focus, force:$force,
       createdAt:$at}')"
   cfg_set --arg r "$REF_SLUG" '.lastRepo = $r' 2>/dev/null || true
 
@@ -232,10 +238,10 @@ review_job_on_signal() {
 review_run_job() {
   local id="$1"
   GOBLIN_JOB_ID="$id"; GOBLIN_JOB_DIR="$(job_dir_of "$id")"
-  local slug number mode provider_ov model_ov focus force
+  local slug number mode provider_ov model_ov effort_ov focus force
   slug="$(job_get "$id" repo)"; number="$(job_get "$id" number)"
   mode="$(job_get "$id" mode)"; provider_ov="$(job_get "$id" provider)"
-  model_ov="$(job_get "$id" model)"; focus="$(job_get "$id" focus)"; force="$(job_get "$id" force)"
+  model_ov="$(job_get "$id" model)"; effort_ov="$(job_get "$id" effort)"; focus="$(job_get "$id" focus)"; force="$(job_get "$id" force)"
   REVIEW_JOB_PR="$number"
 
   job_write "$id" "$(jq -nc --argjson p "$$" '{pid:$p}')"
@@ -275,8 +281,16 @@ review_run_job() {
     model_ov="$(cfg_repo_field "$slug" model '')"
   fi
   # Applied to this process only (see cfg_read); never written back.
-  GOBLIN_CFG_OVERLAY="$(jq -nc --arg p "$provider" --arg m "$model_ov" \
-    '{provider:$p} + (if $m != "" then {providers:{($p):{model:$m}}} else {} end)')"
+  # An effort chosen for one provider means nothing to another (the repo's or the
+  # fallback's), so it is dropped when the review ends up elsewhere.
+  if ! provider_effort_valid "$provider" "$effort_ov"; then
+    log "job $id: $provider has no \"$effort_ov\" effort, so this review uses its own"
+    effort_ov=""
+  fi
+  GOBLIN_CFG_OVERLAY="$(jq -nc --arg p "$provider" --arg m "$model_ov" --arg e "$effort_ov" \
+    '{provider:$p} + ({providers:{($p):(
+        (if $m != "" then {model:$m} else {} end) + (if $e != "" then {effort:$e} else {} end))}}
+      | if .providers[$p] == {} then del(.providers) else . end)')"
   export GOBLIN_CFG_OVERLAY
   job_write "$id" "$(jq -nc --arg p "$provider" '{providerUsed:$p}')"
 
@@ -291,20 +305,16 @@ review_run_job() {
   job_write "$id" "$(jq -nc --arg t "$title" --arg u "$url" --arg h "$head" --arg a "$(jq -r '.author' "$meta")" \
     '{title:$t, url:$u, head:$h, author:$a}')"
 
-  # Reviewing a PR that has already merged posts advice nobody reads; and a commit the
-  # Goblin already reviewed would double-post. Both are the user's call to override.
+  # Reviewing a PR that has already merged posts advice nobody reads; that is the
+  # user's call to override.
   if [ "$force" != "true" ]; then
     if ! gh_pr_is_open "$slug" "$number"; then
       job_phase skipped '{"reason":"closed"}'; return 0
     fi
-    local prior psha
-    prior="$(gh_prior_review "$slug" "$number")"
-    if [ -n "$prior" ]; then
-      psha="$(printf '%s' "$prior" | jq -r '.m.headSha // ""')"
-      if [ "$psha" = "$head" ]; then
-        job_phase skipped '{"reason":"already_reviewed"}'; return 0
-      fi
-    fi
+    # Not gated on "already reviewed": asking for a review by number is the person saying
+    # "again". The usual case is a PR that was reviewed, whose comments they have since
+    # addressed (sometimes on the same commit, e.g. replies only). The engine still hands
+    # the model what it posted before and what was declined, so it is not repeated.
     # Noise: a dependency bot's PR, only lockfiles/generated files, or (if enabled) only
     # docs. Asked for by number it is still the person's call, hence --force.
     local skipj
@@ -317,11 +327,13 @@ review_run_job() {
   local last_sha=""
   last_sha="$(gh_prior_review "$slug" "$number" | jq -r '.m.headSha // ""' 2>/dev/null)"
 
+  # Only a review asked for by number may repeat a commit; `goblin run --pr` still dedups.
+  GOBLIN_REVIEW_AGAIN=true
   ONLY_PR="$number"; DRY_RUN=false; FORCE="$force"
   PREVIEW=false; [ "$mode" = preview ] && PREVIEW=true
   GOBLIN_FOCUS="$focus"; export GOBLIN_FOCUS
 
-  log "job $id: $slug#$number ($mode, $provider${model_ov:+/$model_ov}, $focus)"
+  log "job $id: $slug#$number ($mode, $provider${model_ov:+/$model_ov}${effort_ov:+ · $effort_ov effort}, $focus)"
   engine_review_pr "$slug" "$number" "$head" "$title" "$url" "$base" "$provider" "$last_sha"
   local rc=$?
 
