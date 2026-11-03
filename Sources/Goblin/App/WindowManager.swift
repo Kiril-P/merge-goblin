@@ -34,6 +34,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
 
     func showJob(_ id: String) {
         guard Pattern.jobId.accepts(id) else { return }
+        AppStore.shared.noteUI("window.review")
         let store = AppStore.shared
         let title = store.job(id).map { "\($0.ref) — Review" } ?? "Review"
         show(id: "job:\(id)", title: title, size: NSSize(width: 760, height: 680), minSize: NSSize(width: 620, height: 520)) {
@@ -42,6 +43,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
     }
 
     func showSettings(_ pane: SettingsPane? = nil) {
+        AppStore.shared.noteUI("window.settings")
         if let pane { SettingsNavigation.shared.pane = pane }
         show(id: "settings", title: "Merge Goblin Settings", size: NSSize(width: 760, height: 560), minSize: NSSize(width: 680, height: 460)) {
             AnyView(SettingsView(store: AppStore.shared))
@@ -59,6 +61,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
     /// The ⌥⌘G panel: a single field floating over whatever you are doing.
     func toggleQuick() {
         if let q = quick, q.isVisible { q.close(); return }
+        AppStore.shared.noteUI("quick")
         let q = quick ?? QuickPanel(store: AppStore.shared) { [weak self] job in
             self?.quick?.close()
             // Opening the window for something that takes minutes would steal focus

@@ -1,0 +1,11 @@
+name = "merge-goblin-telemetry"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "merge-goblin-telemetry"
+database_id = "70e9ab53-503f-45da-ab94-f0ca81b1615d"
+
+# READ_TOKEN is a secret (wrangler secret put READ_TOKEN): it guards the read endpoints.

@@ -695,6 +695,12 @@ final class AppStore {
     /// Run a mutating command, report failure, and re-read state. Settings views call
     /// this and nothing else.
     @discardableResult
+    /// One use of a screen, for the local usage log (and, if telemetry is on, the daily
+    /// counts). Fire and forget: it must never slow the UI or show an error.
+    nonisolated func noteUI(_ name: String) {
+        Task.detached(priority: .background) { _ = try? await CLI.shared.run(.noteUI(name)) }
+    }
+
     func perform(_ command: Command, success: String? = nil) async -> Bool {
         do {
             _ = try await CLI.shared.run(command)

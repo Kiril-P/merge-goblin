@@ -44,7 +44,7 @@ goblin_default_config() {
   "refsForbidden": false,
   "refsForbiddenAt": 0,
   "update": { "notify": true, "checkEverySecs": 86400 },
-  "telemetry": { "enabled": false, "id": "" },
+  "telemetry": { "choice": "" },
   "maxReviewsPerDay": 20,
   "skipIfHumanReviewed": true,
   "skip": {
